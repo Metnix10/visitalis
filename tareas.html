@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Gestión de Tareas | Visitalis</title>
+        
+        <link rel="stylesheet" href="Styles/styles.css">
+        <link rel="stylesheet" href="Styles/tareas.css">
+        
+    </head>
+    <body>
+
+        <header class="header-sencillo">
+            <nav>
+                <a href="index.html" class="btn-volver">← Volver al Inicio</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="modulo-tareas">
+                <header class="cabecera-tareas">
+                    <h2>Gestión de Tareas del Grupo</h2>
+                    <p>Asigna y controla las actividades de los integrantes del viaje.</p>
+                </header>
+
+                <form id="formulario-tareas" class="formulario-tareas">
+                    <input type="text" id="input-tarea" required>
+                    
+                    <select id="input-integrante" required>
+                        <option value="" disabled selected>Asignar a...</option>
+                        <option value="Carlos">Carlos</option>
+                        <option value="María">María</option>
+                        <option value="Kael">Kael</option>
+                    </select>
+
+                    <button type="submit" class="btn-accion">Crear Tarea</button>
+                </form>
+
+                <ul id="lista-tareas" class="lista-tareas">
+                </ul>
+            </section>
+        </main>
+
+        <script src="JS/tareas.js"></script>
+    </body>
+</html>
