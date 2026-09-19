@@ -70,5 +70,5 @@ Visitalis es un sitio web interactivo para la comunidad de Puntos de Interés, o
 - **Acumulación de Puntos:** Los usuarios obtienen puntos al realizar check-in o visitar determinados sitios turísticos.
 - **Mapa de Puntos de Interés:** Mapa dedicado para visualizar los puntos otorgados por visitar las zonas.
 - **Sistema de Ranking:** Tabla de clasificación (Leaderboard) con el historial y ranking de puntos acumulados.
-- **Canje de Recompensas:** Módulo de intercambio donde los puntos acumulados se pueden canjear por recompensas dentro de la plataforma.
+- **Canje de Recompensas:** Módulo de intercambio donde los puntos acumulados se pueden canjear por recompensas dentro de la plataforma tales como la adopción simbólica de especies protegidas para promover su preservación.
 
