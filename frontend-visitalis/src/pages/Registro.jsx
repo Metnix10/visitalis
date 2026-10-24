@@ -10,13 +10,31 @@ export default function Registro() {
 
   const navigate = useNavigate();
 
-  const manejarSubmit = (e) => {
+  const manejarSubmit = async (e) => {
     e.preventDefault();
     setMensaje("");
 
     if (nombre && correo && contrasena.length >= 6) {
-      console.log("Datos de registro:", { nombre, correo, contrasena });
-      navigate("/login"); // Lo mandamos a iniciar sesión
+      try {
+        // Hacemos la petición a tu nueva API en Node.js
+        const respuesta = await fetch('http://10.111.126.195:3000/api/registro', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, correo, contrasena })
+        });
+
+        const datos = await respuesta.json();
+
+        if (respuesta.ok) {
+          // Si MySQL guardó el dato correctamente, lo mandamos a iniciar sesión
+          navigate("/login");
+        } else {
+          // Si hay error (ej. el correo ya existe), mostramos el mensaje del backend
+          setMensaje(datos.error || "Ocurrió un error al registrar.");
+        }
+      } catch (error) {
+        setMensaje("Error conectando con el servidor de base de datos.");
+      }
     } else {
       setMensaje(
         "Llena todos los campos. La contraseña debe tener al menos 6 caracteres.",
