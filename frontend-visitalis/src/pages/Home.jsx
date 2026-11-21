@@ -1,6 +1,14 @@
 import { Link } from "react-router-dom";
 
 export default function Home() {
+  const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+
+  // Recarga completa para que se cierre el socket y el usuario quede desconectado
+  const cerrarSesion = () => {
+    sessionStorage.removeItem("usuario");
+    window.location.href = "/";
+  };
+
   return (
     <>
       {/* ENCABEZADO */}
@@ -14,31 +22,56 @@ export default function Home() {
       >
         <div className="logo">Visitalis</div>
 
-        {/* Botones de Autenticación */}
+        {/* Usuario en sesión o botones de autenticación */}
         <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
-          <Link
-            to="/login"
-            style={{
-              textDecoration: "none",
-              color: "#555",
-              fontWeight: "bold",
-            }}
-          >
-            Iniciar sesión
-          </Link>
-          <Link
-            to="/registro"
-            style={{
-              textDecoration: "none",
-              backgroundColor: "#1769e0",
-              color: "white",
-              padding: "8px 18px",
-              borderRadius: "20px",
-              fontWeight: "bold",
-            }}
-          >
-            Registrarse
-          </Link>
+          {usuarioActual ? (
+            <>
+              <span style={{ color: "#1e293b", fontWeight: "bold" }}>
+                  {usuarioActual.nombre}
+              </span>
+              <button
+                type="button"
+                onClick={cerrarSesion}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  background: "white",
+                  color: "#555",
+                  padding: "6px 14px",
+                  borderRadius: "20px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                style={{
+                  textDecoration: "none",
+                  color: "#555",
+                  fontWeight: "bold",
+                }}
+              >
+                Iniciar sesión
+              </Link>
+              <Link
+                to="/registro"
+                style={{
+                  textDecoration: "none",
+                  backgroundColor: "#1769e0",
+                  color: "white",
+                  padding: "8px 18px",
+                  borderRadius: "20px",
+                  fontWeight: "bold",
+                }}
+              >
+                Registrarse
+              </Link>
+            </>
+          )}
         </div>
       </header>
 

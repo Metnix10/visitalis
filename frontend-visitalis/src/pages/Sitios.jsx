@@ -1,7 +1,77 @@
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import "../assets/sitios.css";
 
+// Imágenes representativas por categoría para mantener el diseño de tarjetas
+const IMAGENES_CATEGORIA = {
+  "Sitio Turístico": "https://images.unsplash.com/photo-1564399579883-451a5d44ec08?auto=format&fit=crop&w=1000&q=80",
+  "Museo": "https://images.unsplash.com/photo-1518998053901-5348d3961a04?auto=format&fit=crop&w=1000&q=80",
+  "Restaurante": "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=1000&q=80",
+  "Hospedaje": "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1000&q=80",
+  "Transporte": "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=1000&q=80",
+  "Emergencia": "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1000&q=80",
+};
+
 export default function Sitios() {
+  const [sitios, setSitios] = useState([]);
+  const [categoria, setCategoria] = useState("todas");
+  const [zona, setZona] = useState("todas");
+  const [cargando, setCargando] = useState(true);
+  const [aviso, setAviso] = useState("");
+
+  const navigate = useNavigate();
+  const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+
+  useEffect(() => {
+    fetch("http://localhost:3000/api/sitios")
+      .then((res) => res.json())
+      .then((data) => {
+        setSitios(data);
+        setCargando(false);
+      })
+      .catch((err) => {
+        console.error("Error cargando sitios:", err);
+        setCargando(false);
+      });
+  }, []);
+
+  // Filtrado por categoría exacta y coincidencia de zona en la dirección de CDMX
+  const sitiosFiltrados = sitios.filter((sitio) => {
+    const coincideCategoria =
+      categoria === "todas" || sitio.categoria === categoria;
+    const coincideZona =
+      zona === "todas" ||
+      sitio.direccion.toLowerCase().includes(zona.toLowerCase());
+    return coincideCategoria && coincideZona;
+  });
+
+  const agregarAlItinerario = async (sitio) => {
+    if (!usuarioActual) {
+      alert("Debes iniciar sesión para agregar lugares a tu itinerario.");
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:3000/api/tareas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_sitio: sitio.id_sitio,
+          id_usuario_asignado: usuarioActual.id_usuario,
+          titulo: `Visitar ${sitio.nombre}`,
+        }),
+      });
+
+      if (res.ok) {
+        setAviso(`"${sitio.nombre}" se agregó a tu itinerario de tareas.`);
+        setTimeout(() => setAviso(""), 3500);
+      }
+    } catch (error) {
+      console.error("Error al agregar al itinerario:", error);
+    }
+  };
+
   return (
     <>
       {/* ENCABEZADO */}
@@ -11,94 +81,125 @@ export default function Sitios() {
             Visitalis
           </Link>
         </div>
-        <div className="perfil"></div>
+        <div className="perfil">
+          {usuarioActual ? `Hola, ${usuarioActual.nombre}` : ""}
+        </div>
       </header>
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="contenedor-sitios">
         <h1>Sitios turísticos</h1>
         <p className="subtitulo">
-          Descubre lugares para visitar en Ciudad de México.
+          Descubre lugares para visitar en Ciudad de México ({sitiosFiltrados.length} resultados).
         </p>
+
+        {aviso && (
+          <div
+            style={{
+              backgroundColor: "#d1fae5",
+              color: "#065f46",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              marginBottom: "16px",
+              fontWeight: "500",
+            }}
+          >
+            {aviso}{" "}
+            <Link to="/tareas" style={{ color: "#047857", textDecoration: "underline" }}>
+              Ver itinerario
+            </Link>
+          </div>
+        )}
 
         {/* FILTROS */}
         <section className="filtros">
           <div className="filtro">
             <label htmlFor="categoria">Categoría</label>
-            <select id="categoria">
+            <select
+              id="categoria"
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+            >
               <option value="todas">Todas las categorías</option>
-              <option value="arte">Arte y cultura</option>
-              <option value="naturaleza">Naturaleza</option>
-              <option value="gastronomia">Gastronomía</option>
-              <option value="historia">Historia</option>
+              <option value="Sitio Turístico">Sitio Turístico</option>
+              <option value="Museo">Museo</option>
+              <option value="Restaurante">Restaurante</option>
+              <option value="Hospedaje">Hospedaje</option>
+              <option value="Transporte">Transporte</option>
+              <option value="Emergencia">Emergencia</option>
             </select>
           </div>
 
           <div className="filtro">
-            <label htmlFor="zona">Zona</label>
-            <select id="zona">
+            <label htmlFor="zona">Zona / Alcaldía</label>
+            <select
+              id="zona"
+              value={zona}
+              onChange={(e) => setZona(e.target.value)}
+            >
               <option value="todas">Toda la CDMX</option>
-              <option value="centro">Centro Histórico</option>
-              <option value="chapultepec">Chapultepec</option>
-              <option value="coyoacan">Coyoacán</option>
-              <option value="xochimilco">Xochimilco</option>
+              <option value="Centro Histórico">Centro Histórico</option>
+              <option value="Chapultepec">Chapultepec / Polanco</option>
+              <option value="Juárez">Zona Rosa / Reforma</option>
+              <option value="Coyoacán">Coyoacán</option>
+              <option value="Xochimilco">Xochimilco</option>
             </select>
           </div>
 
-          <button className="btn-filtrar">Aplicar filtros</button>
+          <button
+            className="btn-filtrar"
+            type="button"
+            onClick={() => {
+              setCategoria("todas");
+              setZona("todas");
+            }}
+          >
+            Limpiar filtros
+          </button>
         </section>
 
         {/* LISTA DE SITIOS */}
         <section className="lista-sitios">
-          <article className="sitio">
-            <div className="imagen-sitio">
-              <img
-                src="https://images.unsplash.com/photo-1564399579883-451a5d44ec08?auto=format&fit=crop&w=1000&q=80"
-                alt="Palacio de Bellas Artes"
-              />
-            </div>
-            <div className="info-sitio">
-              <span className="badge-categoria">Arte y cultura</span>
-              <h2>Palacio de Bellas Artes</h2>
-              <p className="ubicacion">Ciudad de México · Centro Histórico</p>
-              <p className="descripcion">
-                Uno de los recintos culturales más representativos de la ciudad.
-                Cuenta con museos, murales, arquitectura histórica y espacios
-                dedicados a las artes escénicas.
-              </p>
-              <div className="acciones-sitio">
-                <button className="ver-mas">Ver sitio</button>
-                <button className="ver-mas iniciar-chat">
-                  Iniciar chat con guías
-                </button>
-              </div>
-            </div>
-          </article>
-
-          <article className="sitio">
-            <div className="imagen-sitio">
-              <img
-                src="https://plus.unsplash.com/premium_photo-1733266882179-4947a583353d?q=80&w=1169&auto=format&fit=crop"
-                alt="Bosque de Chapultepec"
-              />
-            </div>
-            <div className="info-sitio">
-              <span className="badge-categoria naturaleza">Naturaleza</span>
-              <h2>Bosque de Chapultepec</h2>
-              <p className="ubicacion">Ciudad de México · Miguel Hidalgo</p>
-              <p className="descripcion">
-                Amplio espacio verde que combina áreas naturales, museos,
-                espacios culturales, lagos y diferentes actividades para los
-                visitantes.
-              </p>
-              <div className="acciones-sitio">
-                <button className="ver-mas">Ver sitio</button>
-                <button className="ver-mas iniciar-chat">
-                  Iniciar chat con guías
-                </button>
-              </div>
-            </div>
-          </article>
+          {cargando ? (
+            <p>Cargando catálogo de Ciudad de México...</p>
+          ) : sitiosFiltrados.length === 0 ? (
+            <p>No hay lugares que coincidan con ese filtro.</p>
+          ) : (
+            sitiosFiltrados.map((sitio) => (
+              <article className="sitio" key={sitio.id_sitio}>
+                <div className="imagen-sitio">
+                  <img
+                    src={IMAGENES_CATEGORIA[sitio.categoria] || IMAGENES_CATEGORIA["Sitio Turístico"]}
+                    alt={sitio.nombre}
+                  />
+                </div>
+                <div className="info-sitio">
+                  <span className="badge-categoria">{sitio.categoria}</span>
+                  <h2>{sitio.nombre}</h2>
+                  <p className="ubicacion">{sitio.direccion}</p>
+                  <p className="descripcion">{sitio.descripcion}</p>
+                  <div className="acciones-sitio">
+                    <a
+                      href={sitio.url_mapa}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ver-mas"
+                      style={{ textDecoration: "none", display: "inline-block", textAlign: "center" }}
+                    >
+                      Ver en mapa
+                    </a>
+                    <button
+                      type="button"
+                      className="ver-mas iniciar-chat"
+                      onClick={() => agregarAlItinerario(sitio)}
+                    >
+                      + Agregar al itinerario
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
         </section>
       </main>
     </>

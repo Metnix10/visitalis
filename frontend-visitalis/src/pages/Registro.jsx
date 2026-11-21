@@ -16,28 +16,29 @@ export default function Registro() {
 
     if (nombre && correo && contrasena.length >= 6) {
       try {
-        // Hacemos la petición a tu nueva API en Node.js
-        const respuesta = await fetch('http://10.111.126.195:3000/api/registro', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nombre, correo, contrasena })
-        });
+        const respuesta = await fetch(
+          `http://${window.location.hostname}:3000/api/registro`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nombre, correo, contrasena }),
+          }
+        );
 
         const datos = await respuesta.json();
 
         if (respuesta.ok) {
-          // Si MySQL guardó el dato correctamente, lo mandamos a iniciar sesión
           navigate("/login");
         } else {
-          // Si hay error (ej. el correo ya existe), mostramos el mensaje del backend
           setMensaje(datos.error || "Ocurrió un error al registrar.");
         }
       } catch (error) {
+        console.error("Error en registro:", error);
         setMensaje("Error conectando con el servidor de base de datos.");
       }
     } else {
       setMensaje(
-        "Llena todos los campos. La contraseña debe tener al menos 6 caracteres.",
+        "Llena todos los campos. La contraseña debe tener al menos 6 caracteres."
       );
     }
   };
@@ -86,9 +87,11 @@ export default function Registro() {
             />
           </div>
 
-          <p style={{ color: "red", fontSize: "14px", marginBottom: "10px" }}>
-            {mensaje}
-          </p>
+          {mensaje && (
+            <p style={{ color: "red", fontSize: "14px", marginBottom: "10px" }}>
+              {mensaje}
+            </p>
+          )}
 
           <button type="submit">Crear cuenta</button>
         </form>

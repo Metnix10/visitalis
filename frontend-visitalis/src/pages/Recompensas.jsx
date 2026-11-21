@@ -1,7 +1,37 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import "../assets/recompensas.css";
 
 export default function Recompensas() {
+  const [ranking, setRanking] = useState([]);
+  const [historial, setHistorial] = useState([]);
+  const [misPuntos, setMisPuntos] = useState(0);
+
+  const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+
+  useEffect(() => {
+    if (usuarioActual) {
+      setMisPuntos(usuarioActual.puntos || 0);
+    }
+
+    fetch("http://localhost:3000/api/recompensas")
+      .then((res) => res.json())
+      .then((data) => {
+        setRanking(data.ranking || []);
+        setHistorial(data.historial || []);
+
+        if (usuarioActual && data.ranking) {
+          const miRegistro = data.ranking.find(
+            (u) => u.id_usuario === usuarioActual.id_usuario
+          );
+          if (miRegistro) {
+            setMisPuntos(miRegistro.puntos);
+          }
+        }
+      })
+      .catch((err) => console.error("Error cargando recompensas:", err));
+  }, []);
+
   return (
     <>
       <header style={{ padding: "20px", backgroundColor: "#d6d6d6" }}>
@@ -25,70 +55,102 @@ export default function Recompensas() {
           >
             ← Volver al Inicio
           </Link>
-          <div className="puntos-usuario" style={{ color: "white" }}>
-            Mis Puntos: <strong>1,250</strong>
+          <div className="puntos-usuario" style={{ color: "#1e293b", fontWeight: "bold" }}>
+            {usuarioActual ? `${usuarioActual.nombre} · ` : ""}
+            Mis Puntos: <strong>{misPuntos} pts</strong>
           </div>
         </nav>
       </header>
 
       <main className="contenedor-recompensas">
         <section className="modulo-mapa">
-          <h2>Mapa de Exploración</h2>
+          <h2>Mapa de Exploración · Ciudad de México</h2>
           <p>
-            Visita estos puntos turísticos para desbloquear recompensas
-            exclusivas.
+            Completa visitas de tu itinerario en la CDMX para sumar puntos y subir en el tablero público.
           </p>
-          <div className="mapa-placeholder">
-            <span style={{ color: "#94a3b8", fontWeight: "bold" }}>
-              Mapa Interactivo (Próximamente)
-            </span>
+          <div className="mapa-placeholder" style={{ padding: 0, overflow: "hidden" }}>
+            <iframe
+              title="Mapa CDMX"
+              src="https://www.openstreetmap.org/export/embed.html?bbox=-99.2100%2C19.3800%2C-99.1100%2C19.4550&layer=mapnik"
+              style={{ width: "100%", height: "250px", border: 0 }}
+            />
           </div>
         </section>
 
         <div className="grid-recompensas">
           <section className="modulo-misiones">
-            <h3>Misiones Disponibles</h3>
+            <h3>Reglas y Misiones (CDMX)</h3>
             <ul className="lista-misiones">
               <li className="mision-item">
                 <div className="mision-info">
-                  <h4>Fotógrafo Regio</h4>
-                  <p>Haz check-in en 3 museos diferentes.</p>
+                  <h4>Explorador Capitalino</h4>
+                  <p>Marca como visitado cualquier punto del catálogo (+25 pts por sitio).</p>
                 </div>
-                <span className="recompensa-badge">Playera</span>
+                <span className="recompensa-badge">+25 pts</span>
               </li>
               <li className="mision-item">
                 <div className="mision-info">
-                  <h4>Rey de la Montaña</h4>
-                  <p>Visita el mirador principal.</p>
+                  <h4>Ruta Cultural CDMX</h4>
+                  <p>Visita 3 museos del catálogo (Antropología, Frida Kahlo, Soumaya).</p>
                 </div>
-                <span className="recompensa-badge">Café Gratis</span>
+                <span className="recompensa-badge">Insignia Oro</span>
               </li>
+            </ul>
+
+            <h3 style={{ marginTop: "20px" }}>Actividad Reciente (Pública)</h3>
+            <ul className="lista-misiones">
+              {historial.length === 0 ? (
+                <li className="mision-item">
+                  <p style={{ color: "#777" }}>Aún no hay recompensas registradas.</p>
+                </li>
+              ) : (
+                historial.slice(0, 5).map((item) => (
+                  <li className="mision-item" key={item.id_recompensa}>
+                    <div className="mision-info">
+                      <h4>{item.nombre}</h4>
+                      <p>{item.motivo}</p>
+                    </div>
+                    <span className="recompensa-badge">+{item.puntos_ganados} pts</span>
+                  </li>
+                ))
+              )}
             </ul>
           </section>
 
           <section className="modulo-ranking">
             <h3>Ranking de Viajeros</h3>
             <ul className="lista-ranking">
-              <li className="ranking-item top-1">
-                <span className="posicion">1</span>
-                <span className="nombre">Carlos M.</span>
-                <span className="puntos">5,400 pts</span>
-              </li>
-              <li className="ranking-item top-2">
-                <span className="posicion">2</span>
-                <span className="nombre">Laura G.</span>
-                <span className="puntos">4,850 pts</span>
-              </li>
-              <li className="ranking-item top-3">
-                <span className="posicion">3</span>
-                <span className="nombre">Kael</span>
-                <span className="puntos">4,200 pts</span>
-              </li>
-              <li className="ranking-item">
-                <span className="posicion">4</span>
-                <span className="nombre">Tú</span>
-                <span className="puntos">1,250 pts</span>
-              </li>
+              {ranking.length === 0 ? (
+                <li className="ranking-item">
+                  <span>No hay usuarios registrados aún.</span>
+                </li>
+              ) : (
+                ranking.map((viajero, index) => {
+                  const claseTop =
+                    index === 0
+                      ? "top-1"
+                      : index === 1
+                      ? "top-2"
+                      : index === 2
+                      ? "top-3"
+                      : "";
+                  const esYo =
+                    usuarioActual && viajero.id_usuario === usuarioActual.id_usuario;
+
+                  return (
+                    <li
+                      key={viajero.id_usuario}
+                      className={`ranking-item ${claseTop}`}
+                    >
+                      <span className="posicion">{index + 1}</span>
+                      <span className="nombre">
+                        {viajero.nombre} {esYo ? "(Tú)" : ""}
+                      </span>
+                      <span className="puntos">{viajero.puntos} pts</span>
+                    </li>
+                  );
+                })
+              )}
             </ul>
           </section>
         </div>

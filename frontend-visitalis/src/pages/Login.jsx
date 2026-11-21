@@ -3,26 +3,41 @@ import { Link, useNavigate } from "react-router-dom";
 import "../assets/login.css";
 
 export default function Login() {
-  // Estados para guardar lo que el usuario escribe
   const [correo, setCorreo] = useState("");
   const [contrasena, setContrasena] = useState("");
   const [mensaje, setMensaje] = useState("");
 
-  // Hook para redireccionar a otra página por código
   const navigate = useNavigate();
 
-  // Reemplazo de tu antiguo addEventListener('submit')
-  const manejarSubmit = (e) => {
+  const manejarSubmit = async (e) => {
     e.preventDefault();
     setMensaje("");
 
-    // Para el Avance 2, aquí haremos el fetch() a Node.js.
-    // Por ahora, simulamos el inicio de sesión:
-    if (correo && contrasena) {
-      console.log("Datos listos para enviar:", { correo, contrasena });
-      navigate("/"); // Redirige al Home simulando éxito
-    } else {
+    if (!correo || !contrasena) {
       setMensaje("Todos los campos son obligatorios");
+      return;
+    }
+
+    try {
+      const respuesta = await fetch(`http://${window.location.hostname}:3000/api/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ correo, contrasena }),
+      });
+
+      const datos = await respuesta.json();
+
+      if (!respuesta.ok) {
+        setMensaje(datos.error || "Error al iniciar sesión");
+        return;
+      }
+
+      // Guardamos la sesión del usuario para usarla en todo el sistema
+      sessionStorage.setItem("usuario", JSON.stringify(datos.usuario));
+      navigate("/");
+    } catch (error) {
+      console.error("Error de conexión:", error);
+      setMensaje("No se pudo conectar con el servidor");
     }
   };
 
@@ -34,7 +49,6 @@ export default function Login() {
 
         <form onSubmit={manejarSubmit}>
           <div className="campo">
-            {/* Nota: 'for' en HTML es 'htmlFor' en React */}
             <label htmlFor="correo">Correo</label>
             <input
               type="email"
@@ -58,9 +72,11 @@ export default function Login() {
             />
           </div>
 
-          <p style={{ color: "red", fontSize: "14px", marginBottom: "10px" }}>
-            {mensaje}
-          </p>
+          {mensaje && (
+            <p style={{ color: "red", fontSize: "14px", marginBottom: "10px" }}>
+              {mensaje}
+            </p>
+          )}
 
           <button type="submit">Iniciar sesión</button>
         </form>
@@ -73,4 +89,4 @@ export default function Login() {
       </div>
     </div>
   );
-}
+} 

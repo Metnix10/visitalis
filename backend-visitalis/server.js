@@ -1,84 +1,434 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
+const nodemailer = require("nodemailer");
 const { Server } = require("socket.io");
-const db = require('./db');
+const db = require("./db");
 
 const app = express();
 const server = http.createServer(app);
 
-// Le damos permiso a tu frontend de React (puerto 5173) para comunicarse con este backend
 app.use(cors());
 app.use(express.json());
 
-// Configuración del servidor de WebSockets (Chat)
+// Carpeta pública para archivos subidos en el chat
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+app.use("/uploads", express.static(uploadDir));
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const nombreLimpio = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+        cb(null, `${Date.now()}-${nombreLimpio}`);
+    },
+});
+const upload = multer({ storage });
+
 const io = new Server(server, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"],
+        methods: ["GET", "POST", "PUT"],
     },
 });
 
-// Detectar cuando alguien se conecta al servidor
-io.on('connection', (socket) => {
-    console.log('Nuevo usuario conectado. ID:', socket.id);
+// Control de usuarios conectados en tiempo real (socket.id -> idUsuario)
+const socketsUsuarios = new Map();
 
-    // Escuchar los mensajes que lleguen desde React
-    // Dentro de tu io.on('connection', (socket) => { ... })
-    socket.on('mensaje_chat', async (datosMensaje) => {
+io.on("connection", (socket) => {
+    console.log("Socket conectado:", socket.id);
+
+    // 1. Registrar usuario conectado y marcarlo En Línea en tiempo real
+    socket.on("registrar_usuario", async (idUsuario) => {
+        if (!idUsuario) return;
+        const uid = Number(idUsuario);
+        socketsUsuarios.set(socket.id, uid);
+        socket.join(`user_${uid}`);
+
         try {
-            // 1. Guardar en la base de datos
+            await db.execute("UPDATE usuarios SET en_linea = 1 WHERE id_usuario = ?", [uid]);
+            io.emit("estado_usuarios");
+        } catch (err) {
+            console.error("Error actualizando estado en línea:", err);
+        }
+    });
+
+    // 2. Mensajes de chat (Privado y Grupal, texto, archivo, ubicación, cifrado)
+    socket.on("mensaje_chat", async (datosMensaje) => {
+        try {
             const [resultado] = await db.execute(
-                'INSERT INTO mensajes (id_remitente, id_destinatario, contenido) VALUES (?, ?, ?)',
-                [datosMensaje.idRemitente, datosMensaje.idDestinatario, datosMensaje.texto]
+                `INSERT INTO mensajes 
+                (id_remitente, id_destinatario, id_grupo, contenido, tipo, ruta_archivo, es_cifrado, leido) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+                [
+                    datosMensaje.idRemitente,
+                    datosMensaje.idDestinatario || null,
+                    datosMensaje.idGrupo || null,
+                    datosMensaje.texto,
+                    datosMensaje.tipo || "texto",
+                    datosMensaje.rutaArchivo || null,
+                    datosMensaje.esCifrado ? 1 : 0,
+                ]
             );
 
-            // 2. Reenviar a todos (puedes incluir el ID que MySQL le asignó)
-            datosMensaje.idMensaje = resultado.insertId;
-            io.emit('mensaje_chat', datosMensaje);
+            const [userRows] = await db.execute(
+                "SELECT nombre FROM usuarios WHERE id_usuario = ?",
+                [datosMensaje.idRemitente]
+            );
 
+            const mensajeCompleto = {
+                ...datosMensaje,
+                idMensaje: resultado.insertId,
+                nombreRemitente: userRows[0]?.nombre || "Usuario",
+                fechaEnvio: new Date().toISOString(),
+            };
+
+            io.emit("mensaje_chat", mensajeCompleto);
         } catch (error) {
-            console.error('Error guardando el mensaje en MySQL:', error);
+            console.error("Error guardando mensaje en MySQL:", error);
         }
     });
 
-    socket.on('disconnect', () => {
-        console.log('Usuario desconectado. ID:', socket.id);
+    // 3. Señalización para Videollamadas 1 a 1 (WebRTC)
+    socket.on("webrtc_llamar", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_llamada_entrante", data);
+    });
+
+    socket.on("webrtc_aceptar", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_llamada_aceptada", data);
+    });
+
+    socket.on("webrtc_rechazar", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_llamada_rechazada", data);
+    });
+
+    socket.on("webrtc_oferta", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_oferta", data);
+    });
+
+    socket.on("webrtc_respuesta", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_respuesta", data);
+    });
+
+    socket.on("webrtc_ice", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_ice", data);
+    });
+
+    socket.on("webrtc_colgar", (data) => {
+        io.to(`user_${data.idDestino}`).emit("webrtc_colgar", data);
+    });
+
+    // 4. Desconexión en tiempo real
+    socket.on("disconnect", async () => {
+        const uid = socketsUsuarios.get(socket.id);
+        socketsUsuarios.delete(socket.id);
+
+        if (uid) {
+            // Verificar si el usuario no tiene otra pestaña abierta
+            const sigueConectado = Array.from(socketsUsuarios.values()).includes(uid);
+            if (!sigueConectado) {
+                try {
+                    await db.execute("UPDATE usuarios SET en_linea = 0 WHERE id_usuario = ?", [uid]);
+                    io.emit("estado_usuarios");
+                } catch (err) {
+                    console.error("Error al marcar desconectado:", err);
+                }
+            }
+        }
     });
 });
 
-// Encender el servidor
-const PORT = 3000;
-server.listen(PORT, () => {
-    console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
-});
-
-// Ruta para registrar un nuevo usuario
-app.post('/api/registro', async (req, res) => {
-    console.log('Alguien intenta registrarse:', req.body);
-    // Extraemos los datos que enviará el frontend
+// --- AUTENTICACIÓN Y USUARIOS ---
+app.post("/api/registro", async (req, res) => {
     const { nombre, correo, contrasena } = req.body;
-
     try {
-        // Ejecutamos la consulta SQL para insertar los datos
         const [resultado] = await db.execute(
-            'INSERT INTO usuarios (nombre, correo, contrasena) VALUES (?, ?, ?)',
+            "INSERT INTO usuarios (nombre, correo, contrasena) VALUES (?, ?, ?)",
             [nombre, correo, contrasena]
         );
-
-        // Si sale bien, respondemos con éxito y el nuevo ID
-        res.status(201).json({
-            mensaje: 'Usuario registrado con éxito',
-            idUsuario: resultado.insertId
-        });
-
+        res.status(201).json({ mensaje: "Usuario registrado con éxito", idUsuario: resultado.insertId });
     } catch (error) {
-        console.error('Error en registro:', error);
-        // Si el correo ya existe, MySQL lanzará un error (gracias al UNIQUE que pusiste)
-        if (error.code === 'ER_DUP_ENTRY') {
-            res.status(400).json({ error: 'Este correo ya está registrado' });
+        if (error.code === "ER_DUP_ENTRY") {
+            res.status(400).json({ error: "Este correo ya está registrado" });
         } else {
-            res.status(500).json({ error: 'Error interno del servidor' });
+            res.status(500).json({ error: "Error interno del servidor" });
         }
     }
+});
+
+app.post("/api/login", async (req, res) => {
+    const { correo, contrasena } = req.body;
+    try {
+        const [rows] = await db.execute(
+            "SELECT id_usuario, nombre, correo, puntos FROM usuarios WHERE correo = ? AND contrasena = ?",
+            [correo, contrasena]
+        );
+        if (rows.length === 0) {
+            return res.status(401).json({ error: "Correo o contraseña incorrectos" });
+        }
+        await db.execute("UPDATE usuarios SET en_linea = 1 WHERE id_usuario = ?", [rows[0].id_usuario]);
+        io.emit("estado_usuarios");
+        res.json({ mensaje: "Inicio de sesión exitoso", usuario: rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: "Error en el servidor al iniciar sesión" });
+    }
+});
+
+app.get("/api/usuarios", async (req, res) => {
+    try {
+        const [rows] = await db.execute("SELECT id_usuario, nombre, correo, en_linea, puntos FROM usuarios");
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener usuarios" });
+    }
+});
+
+// --- GRUPOS (MÍNIMO 3 INTEGRANTES) ---
+app.get("/api/grupos/:idUsuario", async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT g.* FROM grupos g
+             JOIN grupo_miembros gm ON g.id_grupo = gm.id_grupo
+             WHERE gm.id_usuario = ?
+             ORDER BY g.fecha_creacion DESC`,
+            [req.params.idUsuario]
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener grupos" });
+    }
+});
+
+app.post("/api/grupos", async (req, res) => {
+    const { nombre_grupo, id_creador, miembros } = req.body;
+    const setMiembros = new Set([Number(id_creador), ...(miembros || []).map(Number)]);
+
+    if (!nombre_grupo || setMiembros.size < 3) {
+        return res.status(400).json({
+            error: "El grupo requiere un nombre y mínimo 3 integrantes (incluyéndote).",
+        });
+    }
+
+    try {
+        const [resGrupo] = await db.execute(
+            "INSERT INTO grupos (nombre_grupo, id_creador) VALUES (?, ?)",
+            [nombre_grupo, id_creador]
+        );
+        const idGrupo = resGrupo.insertId;
+
+        for (const uid of setMiembros) {
+            await db.execute("INSERT INTO grupo_miembros (id_grupo, id_usuario) VALUES (?, ?)", [
+                idGrupo,
+                uid,
+            ]);
+        }
+
+        io.emit("grupos_actualizados");
+        res.status(201).json({ mensaje: "Grupo creado", idGrupo });
+    } catch (error) {
+        console.error("Error creando grupo:", error);
+        res.status(500).json({ error: "Error al crear grupo" });
+    }
+});
+
+// --- HISTORIAL DE MENSAJES Y ALERTAS OFFLINE ---
+app.get("/api/mensajes/privado/:u1/:u2", async (req, res) => {
+    const { u1, u2 } = req.params;
+    try {
+        // Marcar como leídos los mensajes que u2 envió a u1 mientras estaba offline/en otro chat
+        await db.execute(
+            "UPDATE mensajes SET leido = 1 WHERE id_remitente = ? AND id_destinatario = ? AND id_grupo IS NULL AND leido = 0",
+            [u2, u1]
+        );
+
+        const [rows] = await db.execute(
+            `SELECT m.id_mensaje AS idMensaje, m.id_remitente AS idRemitente, 
+                    m.id_destinatario AS idDestinatario, m.contenido AS texto, 
+                    m.tipo, m.ruta_archivo AS rutaArchivo, m.es_cifrado AS esCifrado,
+                    u.nombre AS nombreRemitente
+             FROM mensajes m
+             JOIN usuarios u ON m.id_remitente = u.id_usuario
+             WHERE m.id_grupo IS NULL 
+               AND ((m.id_remitente = ? AND m.id_destinatario = ?) OR (m.id_remitente = ? AND m.id_destinatario = ?))
+             ORDER BY m.fecha_envio ASC`,
+            [u1, u2, u2, u1]
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error cargando historial privado" });
+    }
+});
+
+app.get("/api/mensajes/grupo/:idGrupo", async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT m.id_mensaje AS idMensaje, m.id_remitente AS idRemitente, 
+                    m.id_grupo AS idGrupo, m.contenido AS texto, 
+                    m.tipo, m.ruta_archivo AS rutaArchivo, m.es_cifrado AS esCifrado,
+                    u.nombre AS nombreRemitente
+             FROM mensajes m
+             JOIN usuarios u ON m.id_remitente = u.id_usuario
+             WHERE m.id_grupo = ?
+             ORDER BY m.fecha_envio ASC`,
+            [req.params.idGrupo]
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error cargando historial grupal" });
+    }
+});
+
+app.get("/api/mensajes/no-leidos/:idUsuario", async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT id_remitente, COUNT(*) AS total 
+             FROM mensajes 
+             WHERE id_destinatario = ? AND id_grupo IS NULL AND leido = 0 
+             GROUP BY id_remitente`,
+            [req.params.idUsuario]
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error obteniendo alertas" });
+    }
+});
+
+// --- SUBIDA DE ARCHIVOS ---
+app.post("/api/upload", upload.single("archivo"), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No se recibió archivo" });
+
+    let tipo = "archivo";
+    if (req.file.mimetype.startsWith("image/")) tipo = "imagen";
+    else if (req.file.mimetype.startsWith("audio/")) tipo = "audio";
+    else if (req.file.mimetype.startsWith("video/")) tipo = "video";
+
+    res.json({
+        rutaArchivo: `/uploads/${req.file.filename}`,
+        nombreOriginal: req.file.originalname,
+        tipo,
+    });
+});
+
+// --- ENVÍO DE CORREO ELECTRÓNICO ---
+app.post("/api/correo", async (req, res) => {
+    const { idDestinatario, asunto, mensaje, nombreRemitente } = req.body;
+    try {
+        const [users] = await db.execute("SELECT nombre, correo FROM usuarios WHERE id_usuario = ?", [
+            idDestinatario,
+        ]);
+        if (users.length === 0) return res.status(404).json({ error: "Usuario destino no encontrado" });
+
+        const destino = users[0];
+
+        // Cuenta SMTP de prueba automática (o puedes poner tu Gmail en auth)
+        const testAccount = await nodemailer.createTestAccount();
+        const transporter = nodemailer.createTransport({
+            host: "smtp.ethereal.email",
+            port: 587,
+            secure: false,
+            auth: {
+                user: testAccount.user,
+                pass: testAccount.pass,
+            },
+        });
+
+        const info = await transporter.sendMail({
+            from: `"Visitalis CDMX" <${testAccount.user}>`,
+            to: destino.correo,
+            subject: `[Visitalis] ${asunto || "Mensaje de viaje"}`,
+            text: `Hola ${destino.nombre},\n\n${nombreRemitente} te envió un mensaje desde Visitalis:\n\n${mensaje}`,
+        });
+
+        const previewUrl = nodemailer.getTestMessageUrl(info);
+        res.json({
+            mensaje: `Correo enviado a ${destino.correo}`,
+            previewUrl,
+        });
+    } catch (error) {
+        console.error("Error enviando correo:", error);
+        res.status(500).json({ error: "No se pudo enviar el correo" });
+    }
+});
+
+// --- CATÁLOGO, TAREAS Y RECOMPENSAS ---
+app.get("/api/sitios", async (req, res) => {
+    try {
+        const [rows] = await db.execute("SELECT * FROM puntos_interes");
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener sitios turísticos" });
+    }
+});
+
+app.get("/api/tareas", async (req, res) => {
+    try {
+        const [rows] = await db.execute(`
+            SELECT t.*, u.nombre AS nombre_asignado, p.nombre AS nombre_sitio 
+            FROM tareas t
+            LEFT JOIN usuarios u ON t.id_usuario_asignado = u.id_usuario
+            LEFT JOIN puntos_interes p ON t.id_sitio = p.id_sitio
+            ORDER BY t.id_tarea DESC
+        `);
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener tareas" });
+    }
+});
+
+app.post("/api/tareas", async (req, res) => {
+    const { id_grupo, id_sitio, id_usuario_asignado, titulo } = req.body;
+    try {
+        const [resultado] = await db.execute(
+            "INSERT INTO tareas (id_grupo, id_sitio, id_usuario_asignado, titulo) VALUES (?, ?, ?, ?)",
+            [id_grupo || null, id_sitio || null, id_usuario_asignado, titulo]
+        );
+        res.status(201).json({ mensaje: "Tarea asignada", idTarea: resultado.insertId });
+    } catch (error) {
+        res.status(500).json({ error: "Error al crear la tarea" });
+    }
+});
+
+app.put("/api/tareas/:id/completar", async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [tareas] = await db.execute("SELECT * FROM tareas WHERE id_tarea = ?", [id]);
+        if (tareas.length === 0) return res.status(404).json({ error: "Tarea no encontrada" });
+        if (tareas[0].completada) return res.status(400).json({ error: "La tarea ya fue completada" });
+
+        await db.execute("UPDATE tareas SET completada = 1, fecha_completada = NOW() WHERE id_tarea = ?", [id]);
+        await db.execute("UPDATE usuarios SET puntos = puntos + 25 WHERE id_usuario = ?", [tareas[0].id_usuario_asignado]);
+        await db.execute(
+            "INSERT INTO historial_recompensas (id_usuario, motivo, puntos_ganados) VALUES (?, ?, ?)",
+            [tareas[0].id_usuario_asignado, `Visita completada: ${tareas[0].titulo}`, 25]
+        );
+
+        res.json({ mensaje: "Tarea completada y +25 puntos otorgados" });
+    } catch (error) {
+        res.status(500).json({ error: "Error al completar tarea" });
+    }
+});
+
+app.get("/api/recompensas", async (req, res) => {
+    try {
+        const [ranking] = await db.execute("SELECT id_usuario, nombre, puntos FROM usuarios ORDER BY puntos DESC");
+        const [historial] = await db.execute(`
+            SELECT h.*, u.nombre 
+            FROM historial_recompensas h
+            JOIN usuarios u ON h.id_usuario = u.id_usuario
+            ORDER BY h.fecha DESC LIMIT 20
+        `);
+        res.json({ ranking, historial });
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener recompensas" });
+    }
+});
+
+const PORT = 3000;
+server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
 });
