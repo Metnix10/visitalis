@@ -33,7 +33,7 @@ export default function Login() {
       }
 
       // Guardamos la sesión del usuario para usarla en todo el sistema
-      sessionStorage.setItem("usuario", JSON.stringify(datos.usuario));
+      localStorage.setItem("usuario", JSON.stringify(datos.usuario));
       navigate("/");
     } catch (error) {
       console.error("Error de conexión:", error);
@@ -89,4 +89,4 @@ export default function Login() {
       </div>
     </div>
   );
-} 
+}

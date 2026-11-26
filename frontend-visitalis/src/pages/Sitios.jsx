@@ -20,7 +20,7 @@ export default function Sitios() {
   const [aviso, setAviso] = useState("");
 
   const navigate = useNavigate();
-  const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+  const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
 
   useEffect(() => {
     fetch("http://localhost:3000/api/sitios")

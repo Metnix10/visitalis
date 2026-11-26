@@ -129,7 +129,6 @@ io.on("connection", (socket) => {
         socketsUsuarios.delete(socket.id);
 
         if (uid) {
-            // Verificar si el usuario no tiene otra pestaña abierta
             const sigueConectado = Array.from(socketsUsuarios.values()).includes(uid);
             if (!sigueConectado) {
                 try {
@@ -165,7 +164,7 @@ app.post("/api/login", async (req, res) => {
     const { correo, contrasena } = req.body;
     try {
         const [rows] = await db.execute(
-            "SELECT id_usuario, nombre, correo, puntos FROM usuarios WHERE correo = ? AND contrasena = ?",
+            "SELECT id_usuario, nombre, correo, puntos, marco_activo, insignia_activa FROM usuarios WHERE correo = ? AND contrasena = ?",
             [correo, contrasena]
         );
         if (rows.length === 0) {
@@ -181,7 +180,9 @@ app.post("/api/login", async (req, res) => {
 
 app.get("/api/usuarios", async (req, res) => {
     try {
-        const [rows] = await db.execute("SELECT id_usuario, nombre, correo, en_linea, puntos FROM usuarios");
+        const [rows] = await db.execute(
+            "SELECT id_usuario, nombre, correo, en_linea, puntos, marco_activo, insignia_activa FROM usuarios"
+        );
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: "Error al obtener usuarios" });
@@ -240,7 +241,6 @@ app.post("/api/grupos", async (req, res) => {
 app.get("/api/mensajes/privado/:u1/:u2", async (req, res) => {
     const { u1, u2 } = req.params;
     try {
-        // Marcar como leídos los mensajes que u2 envió a u1 mientras estaba offline/en otro chat
         await db.execute(
             "UPDATE mensajes SET leido = 1 WHERE id_remitente = ? AND id_destinatario = ? AND id_grupo IS NULL AND leido = 0",
             [u2, u1]
@@ -325,7 +325,6 @@ app.post("/api/correo", async (req, res) => {
 
         const destino = users[0];
 
-        // Cuenta SMTP de prueba automática (o puedes poner tu Gmail en auth)
         const testAccount = await nodemailer.createTestAccount();
         const transporter = nodemailer.createTransport({
             host: "smtp.ethereal.email",
@@ -415,7 +414,9 @@ app.put("/api/tareas/:id/completar", async (req, res) => {
 
 app.get("/api/recompensas", async (req, res) => {
     try {
-        const [ranking] = await db.execute("SELECT id_usuario, nombre, puntos FROM usuarios ORDER BY puntos DESC");
+        const [ranking] = await db.execute(
+            "SELECT id_usuario, nombre, puntos, marco_activo, insignia_activa FROM usuarios ORDER BY puntos DESC"
+        );
         const [historial] = await db.execute(`
             SELECT h.*, u.nombre 
             FROM historial_recompensas h
@@ -428,7 +429,110 @@ app.get("/api/recompensas", async (req, res) => {
     }
 });
 
+// --- TIENDA DE COSMÉTICOS E INVENTARIO ---
+app.get("/api/tienda/:idUsuario", async (req, res) => {
+    try {
+        const [catalogo] = await db.execute(
+            "SELECT * FROM tienda_cosmeticos ORDER BY precio_puntos ASC"
+        );
+        const [comprados] = await db.execute(
+            "SELECT id_cosmetico FROM usuario_cosmeticos WHERE id_usuario = ?",
+            [req.params.idUsuario]
+        );
+        const idsComprados = comprados.map((c) => c.id_cosmetico);
+        res.json({ catalogo, idsComprados });
+    } catch (error) {
+        res.status(500).json({ error: "Error cargando la tienda de cosméticos" });
+    }
+});
+
+app.post("/api/tienda/comprar", async (req, res) => {
+    const { idUsuario, idCosmetico } = req.body;
+    try {
+        const [[usuario]] = await db.execute(
+            "SELECT puntos FROM usuarios WHERE id_usuario = ?",
+            [idUsuario]
+        );
+        const [[item]] = await db.execute(
+            "SELECT * FROM tienda_cosmeticos WHERE id_cosmetico = ?",
+            [idCosmetico]
+        );
+
+        if (!usuario || !item) {
+            return res.status(404).json({ error: "Usuario o cosmético no encontrado" });
+        }
+        if (usuario.puntos < item.precio_puntos) {
+            return res.status(400).json({ error: "No tienes suficientes puntos para canjear este cosmético" });
+        }
+
+        await db.execute(
+            "UPDATE usuarios SET puntos = puntos - ? WHERE id_usuario = ?",
+            [item.precio_puntos, idUsuario]
+        );
+        await db.execute(
+            "INSERT INTO usuario_cosmeticos (id_usuario, id_cosmetico) VALUES (?, ?)",
+            [idUsuario, idCosmetico]
+        );
+
+        res.json({
+            mensaje: `Canjeaste "${item.nombre}" con éxito`,
+            puntosRestantes: usuario.puntos - item.precio_puntos,
+        });
+    } catch (error) {
+        if (error.code === "ER_DUP_ENTRY") {
+            return res.status(400).json({ error: "Ya tienes este cosmético en tu inventario" });
+        }
+        console.error("Error al comprar cosmético:", error);
+        res.status(500).json({ error: "Error al procesar el canje" });
+    }
+});
+
+app.put("/api/tienda/equipar", async (req, res) => {
+    const { idUsuario, tipo, valorVisual } = req.body;
+    try {
+        const columna = tipo === "marco" ? "marco_activo" : "insignia_activa";
+        await db.execute(
+            `UPDATE usuarios SET ${columna} = ? WHERE id_usuario = ?`,
+            [valorVisual, idUsuario]
+        );
+        res.json({ mensaje: "Cosmético equipado en tu perfil" });
+    } catch (error) {
+        console.error("Error al equipar cosmético:", error);
+        res.status(500).json({ error: "Error al equipar el cosmético" });
+    }
+});
+
 const PORT = 3000;
 server.listen(PORT, "0.0.0.0", () => {
     console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
+});
+
+// Completar misión o simular check-in de demostración
+app.post("/api/misiones/completar", async (req, res) => {
+    const { idUsuario, tituloMision, puntos } = req.body;
+    const puntosGanados = Number(puntos) || 25;
+
+    try {
+        await db.execute(
+            "UPDATE usuarios SET puntos = puntos + ? WHERE id_usuario = ?",
+            [puntosGanados, idUsuario]
+        );
+        await db.execute(
+            "INSERT INTO historial_recompensas (id_usuario, motivo, puntos_ganados) VALUES (?, ?, ?)",
+            [idUsuario, `Misión completada: ${tituloMision}`, puntosGanados]
+        );
+
+        const [[usuario]] = await db.execute(
+            "SELECT puntos FROM usuarios WHERE id_usuario = ?",
+            [idUsuario]
+        );
+
+        res.json({
+            mensaje: `Misión "${tituloMision}" completada (+${puntosGanados} pts)`,
+            puntosActuales: usuario.puntos,
+        });
+    } catch (error) {
+        console.error("Error completando misión:", error);
+        res.status(500).json({ error: "Error al registrar la misión" });
+    }
 });

@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Registro from "./pages/Registro";
 import Sitios from "./pages/Sitios";
 import Tareas from "./pages/Tareas";
+import Perfil from "./pages/Perfil";
 import Recompensas from "./pages/Recompensas";
 
 import ChatWidget from "./components/ChatWidget"; 
@@ -25,6 +26,7 @@ function App() {
         <Route path="/sitios" element={<Sitios />} />
         <Route path="/tareas" element={<Tareas />} />
         <Route path="/recompensas" element={<Recompensas />} />
+        <Route path="/perfil" element={<Perfil />} />
       </Routes>
       
       {/* 4. El chat solo se dibuja si 'ocultarChat' es falso */}

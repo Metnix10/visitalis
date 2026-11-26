@@ -81,10 +81,10 @@ export default function Tareas() {
 
       if (res.ok) {
         // Si la tarea era del usuario con sesión iniciada, actualizamos sus puntos locales
-        const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+        const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
         if (usuarioActual && usuarioActual.id_usuario === tarea.id_usuario_asignado) {
           usuarioActual.puntos = (usuarioActual.puntos || 0) + 25;
-          sessionStorage.setItem("usuario", JSON.stringify(usuarioActual));
+          localStorage.setItem("usuario", JSON.stringify(usuarioActual));
         }
 
         setAviso(data.mensaje || "¡Tarea completada! +25 puntos otorgados.");

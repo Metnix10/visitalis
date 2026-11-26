@@ -97,5 +97,3 @@ INSERT INTO puntos_interes (nombre, categoria, descripcion, direccion, url_mapa)
 ('Hotel Geneve CDMX', 'Hospedaje', 'Hotel clásico de estilo europeo en la Zona Rosa con museo de antigüedades y conectividad céntrica.', 'Londres 130, Juárez, Cuauhtémoc, 06600 CDMX', 'https://maps.google.com/?q=Hotel+Geneve+CDMX'),
 ('Terminal TAPO y Metro San Lázaro', 'Transporte', 'Nodo principal de transporte terrestre e interconexión de líneas 1 y B del Sistema de Transporte Colectivo Metro.', 'Calz. Ignacio Zaragoza 200, 7 de Julio, Venustiano Carranza, 15390 CDMX', 'https://maps.google.com/?q=TAPO+Metro+San+Lazaro+CDMX'),
 ('Hospital General de México Dr. Eduardo Liceaga', 'Emergencia', 'Centro hospitalario público de referencia nacional con atención de urgencias médicas las 24 horas.', 'Dr. Balmis 148, Doctores, Cuauhtémoc, 06720 CDMX', 'https://maps.google.com/?q=Hospital+General+de+Mexico+CDMX');
-
-SELECT * FROM usuarios;

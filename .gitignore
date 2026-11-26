@@ -1,0 +1,9 @@
+# Dependencias y archivos locales
+
+node_modules/
+frontend-visitalis/node_modules/
+backend-visitalis/node_modules/
+backend-visitalis/uploads/*
+!backend-visitalis/uploads/.gitkeep
+.env
+dist/

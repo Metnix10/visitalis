@@ -7,8 +7,7 @@ const pool = mysql.createPool({
     database: 'visitalis',
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0,
-    port: 3307
+    queueLimit: 0
 });
 
 pool.getConnection((err, connection) => {

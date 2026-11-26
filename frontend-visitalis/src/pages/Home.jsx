@@ -1,13 +1,29 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 export default function Home() {
-  const usuarioActual = JSON.parse(sessionStorage.getItem("usuario") || "null");
+  const [usuarioActual, setUsuarioActual] = useState(() =>
+    JSON.parse(localStorage.getItem("usuario") || "null")
+  );
 
-  // Recarga completa para que se cierre el socket y el usuario quede desconectado
-  const cerrarSesion = () => {
-    sessionStorage.removeItem("usuario");
-    window.location.href = "/";
-  };
+  // Sincroniza puntos y cosméticos equipados al regresar a Inicio
+  useEffect(() => {
+    if (!usuarioActual) return;
+
+    fetch(`http://${window.location.hostname}:3000/api/usuarios`)
+      .then((res) => res.json())
+      .then((lista) => {
+        const actualizado = lista.find(
+          (u) => u.id_usuario === usuarioActual.id_usuario
+        );
+        if (actualizado) {
+          const combinado = { ...usuarioActual, ...actualizado };
+          setUsuarioActual(combinado);
+          localStorage.setItem("usuario", JSON.stringify(combinado));
+        }
+      })
+      .catch((err) => console.error("Error sincronizando perfil:", err));
+  }, []);
 
   return (
     <>
@@ -22,57 +38,101 @@ export default function Home() {
       >
         <div className="logo">Visitalis</div>
 
-        {/* Usuario en sesión o botones de autenticación */}
-        <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
-          {usuarioActual ? (
-            <>
-              <span style={{ color: "#1e293b", fontWeight: "bold" }}>
-                  {usuarioActual.nombre}
+        {/* Perfil activo o Botones de Autenticación */}
+        {usuarioActual ? (
+          <Link
+            to="/perfil"
+            title="Ver mi perfil y cosméticos"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              textDecoration: "none",
+              color: "#1e293b",
+              backgroundColor: "#f1f5f9",
+              padding: "6px 14px",
+              borderRadius: "999px",
+              fontWeight: "bold",
+              fontSize: "14px",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <div
+              style={{
+                width: "34px",
+                height: "34px",
+                borderRadius: "50%",
+                backgroundColor: "#1769e0",
+                color: "white",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: "bold",
+                border:
+                  usuarioActual.marco_activo &&
+                  usuarioActual.marco_activo !== "none"
+                    ? usuarioActual.marco_activo
+                    : "2px solid #cbd5e1",
+              }}
+            >
+              {usuarioActual.nombre?.charAt(0).toUpperCase()}
+            </div>
+
+            <span>{usuarioActual.nombre}</span>
+
+            {usuarioActual.insignia_activa && (
+              <span
+                style={{
+                  backgroundColor: "#fef3c7",
+                  color: "#b45309",
+                  padding: "2px 8px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                }}
+              >
+                {usuarioActual.insignia_activa}
               </span>
-              <button
-                type="button"
-                onClick={cerrarSesion}
-                style={{
-                  border: "1px solid #cbd5e1",
-                  background: "white",
-                  color: "#555",
-                  padding: "6px 14px",
-                  borderRadius: "20px",
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                }}
-              >
-                Cerrar sesión
-              </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                style={{
-                  textDecoration: "none",
-                  color: "#555",
-                  fontWeight: "bold",
-                }}
-              >
-                Iniciar sesión
-              </Link>
-              <Link
-                to="/registro"
-                style={{
-                  textDecoration: "none",
-                  backgroundColor: "#1769e0",
-                  color: "white",
-                  padding: "8px 18px",
-                  borderRadius: "20px",
-                  fontWeight: "bold",
-                }}
-              >
-                Registrarse
-              </Link>
-            </>
-          )}
-        </div>
+            )}
+
+            <span
+              style={{
+                backgroundColor: "#dbeafe",
+                color: "#1769e0",
+                padding: "2px 10px",
+                borderRadius: "999px",
+                fontSize: "12px",
+              }}
+            >
+              {usuarioActual.puntos || 0} pts
+            </span>
+          </Link>
+        ) : (
+          <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
+            <Link
+              to="/login"
+              style={{
+                textDecoration: "none",
+                color: "#555",
+                fontWeight: "bold",
+              }}
+            >
+              Iniciar sesión
+            </Link>
+            <Link
+              to="/registro"
+              style={{
+                textDecoration: "none",
+                backgroundColor: "#1769e0",
+                color: "white",
+                padding: "8px 18px",
+                borderRadius: "20px",
+                fontWeight: "bold",
+              }}
+            >
+              Registrarse
+            </Link>
+          </div>
+        )}
       </header>
 
       {/* IMAGEN PRINCIPAL */}
