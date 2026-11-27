@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
-import "../assets/chat.css";
 import { API_URL } from "../api";
+import "../assets/chat.css";
 
-const API_URL = `${API_URL}`;
 const socket = io(API_URL || undefined);
 
 // Cifrado simétrico activable/desactivable
