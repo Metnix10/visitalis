@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { API_URL } from "../api";
 
 export default function Perfil() {
   const navigate = useNavigate();
