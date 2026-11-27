@@ -1,86 +1,6 @@
-DROP DATABASE IF EXISTS visitalis;
-CREATE DATABASE visitalis;
 USE visitalis;
 
--- 1. Usuarios (con estado en línea y puntaje acumulado)
-CREATE TABLE usuarios (
-    id_usuario INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL,
-    correo VARCHAR(150) NOT NULL,
-    contrasena VARCHAR(255) NOT NULL,
-    en_linea TINYINT(1) NOT NULL DEFAULT 0,
-    puntos INT NOT NULL DEFAULT 0,
-    CONSTRAINT uq_usuarios_correo UNIQUE (correo)
-);
-
--- 2. Grupos de viaje (mínimo 3 integrantes validado en backend)
-CREATE TABLE grupos (
-    id_grupo INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre_grupo VARCHAR(100) NOT NULL,
-    id_creador INT UNSIGNED NOT NULL,
-    fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_grupos_creador FOREIGN KEY (id_creador) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
-);
-
-CREATE TABLE grupo_miembros (
-    id_grupo INT UNSIGNED NOT NULL,
-    id_usuario INT UNSIGNED NOT NULL,
-    PRIMARY KEY (id_grupo, id_usuario),
-    CONSTRAINT fk_gm_grupo FOREIGN KEY (id_grupo) REFERENCES grupos(id_grupo) ON DELETE CASCADE,
-    CONSTRAINT fk_gm_usuario FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
-);
-
--- 3. Mensajes (soporta chat privado, grupal, archivos, ubicación y cifrado)
-CREATE TABLE mensajes (
-    id_mensaje INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_remitente INT UNSIGNED NOT NULL,
-    id_destinatario INT UNSIGNED NULL,
-    id_grupo INT UNSIGNED NULL,
-    contenido TEXT NOT NULL,
-    tipo ENUM('texto','imagen','video','audio','archivo','ubicacion') NOT NULL DEFAULT 'texto',
-    ruta_archivo VARCHAR(255) NULL,
-    es_cifrado TINYINT(1) NOT NULL DEFAULT 0,
-    leido TINYINT(1) NOT NULL DEFAULT 0,
-    fecha_envio DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_mensajes_remitente FOREIGN KEY (id_remitente) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
-    CONSTRAINT fk_mensajes_destinatario FOREIGN KEY (id_destinatario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
-    CONSTRAINT fk_mensajes_grupo FOREIGN KEY (id_grupo) REFERENCES grupos(id_grupo) ON DELETE CASCADE
-);
-
--- 4. Catálogo de Puntos de Interés (Mínimo 15 lugares)
-CREATE TABLE puntos_interes (
-    id_sitio INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(120) NOT NULL,
-    categoria ENUM('Sitio Turístico','Museo','Restaurante','Hospedaje','Transporte','Emergencia') NOT NULL,
-    descripcion TEXT NOT NULL,
-    direccion VARCHAR(200) NOT NULL,
-    url_mapa VARCHAR(255) NOT NULL
-);
-
--- 5. Tareas / Itinerario del grupo
-CREATE TABLE tareas (
-    id_tarea INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_grupo INT UNSIGNED NULL,
-    id_sitio INT UNSIGNED NULL,
-    id_usuario_asignado INT UNSIGNED NOT NULL,
-    titulo VARCHAR(150) NOT NULL,
-    completada TINYINT(1) NOT NULL DEFAULT 0,
-    fecha_completada DATETIME NULL,
-    CONSTRAINT fk_tareas_grupo FOREIGN KEY (id_grupo) REFERENCES grupos(id_grupo) ON DELETE SET NULL,
-    CONSTRAINT fk_tareas_sitio FOREIGN KEY (id_sitio) REFERENCES puntos_interes(id_sitio) ON DELETE SET NULL,
-    CONSTRAINT fk_tareas_usuario FOREIGN KEY (id_usuario_asignado) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
-);
-
--- 6. Historial de Recompensas visible para todos
-CREATE TABLE historial_recompensas (
-    id_recompensa INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    id_usuario INT UNSIGNED NOT NULL,
-    motivo VARCHAR(150) NOT NULL,
-    puntos_ganados INT NOT NULL,
-    fecha DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_recompensas_usuario FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
-);
-
+-- Catálogo inicial de Puntos de Interés (15 lugares en CDMX)
 INSERT INTO puntos_interes (nombre, categoria, descripcion, direccion, url_mapa) VALUES
 ('Zócalo (Plaza de la Constitución)', 'Sitio Turístico', 'Plaza principal del Centro Histórico de la Ciudad de México, rodeada por la Catedral Metropolitana y Palacio Nacional.', 'Plaza de la Constitución S/N, Centro Histórico, Cuauhtémoc, 06010 CDMX', 'https://maps.google.com/?q=Zocalo+Plaza+de+la+Constitucion+CDMX'),
 ('Bosque de Chapultepec', 'Sitio Turístico', 'El parque urbano más grande de Latinoamérica, con lagos, áreas verdes, monumentos y espacios culturales.', 'Bosque de Chapultepec I Secc, Miguel Hidalgo, 11100 CDMX', 'https://maps.google.com/?q=Bosque+de+Chapultepec+CDMX'),
@@ -97,3 +17,12 @@ INSERT INTO puntos_interes (nombre, categoria, descripcion, direccion, url_mapa)
 ('Hotel Geneve CDMX', 'Hospedaje', 'Hotel clásico de estilo europeo en la Zona Rosa con museo de antigüedades y conectividad céntrica.', 'Londres 130, Juárez, Cuauhtémoc, 06600 CDMX', 'https://maps.google.com/?q=Hotel+Geneve+CDMX'),
 ('Terminal TAPO y Metro San Lázaro', 'Transporte', 'Nodo principal de transporte terrestre e interconexión de líneas 1 y B del Sistema de Transporte Colectivo Metro.', 'Calz. Ignacio Zaragoza 200, 7 de Julio, Venustiano Carranza, 15390 CDMX', 'https://maps.google.com/?q=TAPO+Metro+San+Lazaro+CDMX'),
 ('Hospital General de México Dr. Eduardo Liceaga', 'Emergencia', 'Centro hospitalario público de referencia nacional con atención de urgencias médicas las 24 horas.', 'Dr. Balmis 148, Doctores, Cuauhtémoc, 06720 CDMX', 'https://maps.google.com/?q=Hospital+General+de+Mexico+CDMX');
+
+-- Catálogo inicial de la Tienda de Cosméticos
+INSERT INTO tienda_cosmeticos (nombre, descripcion, tipo, valor_visual, precio_puntos) VALUES
+('Marco Dorado', 'Borde dorado brillante para tu avatar.', 'marco', '3px solid #f59e0b', 25),
+('Marco Esmeralda', 'Borde verde inspirado en Chapultepec.', 'marco', '3px solid #10b981', 50),
+('Marco Neón', 'Borde púrpura llamativo en chat y ranking.', 'marco', '3px solid #8b5cf6', 75),
+('Explorador CDMX', 'Insignia de viajero capitalino.', 'insignia', '🧭 Explorador', 25),
+('Amante de Museos', 'Para quienes recorren la ruta cultural.', 'insignia', '🏛️ Cultural', 50),
+('Leyenda Viajera', 'Distintivo élite visible para todos.', 'insignia', '👑 Leyenda', 100);
