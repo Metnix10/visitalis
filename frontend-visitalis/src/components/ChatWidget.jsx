@@ -5,7 +5,7 @@ import "../assets/chat.css";
 const API_URL = `http://${window.location.hostname}:3000`;
 const socket = io(API_URL);
 
-// Utilidad de cifrado simétrico activable/desactivable
+// Cifrado simétrico activable/desactivable
 const LLAVE_CIFRADO = "VISITALIS_CDMX_2026";
 function cifrarTexto(texto) {
   const bytes = new TextEncoder().encode(texto);
@@ -23,6 +23,20 @@ function descifrarTexto(cifrado) {
   }
 }
 
+// Mapeo visual del estado de conexión (0=Desconectado, 1=En línea, 2=Ausente, 3=Ocupado)
+function obtenerInfoEstado(codigo) {
+  switch (Number(codigo)) {
+    case 1:
+      return { texto: "En línea", color: "#22c55e" };
+    case 2:
+      return { texto: "Ausente", color: "#f59e0b" };
+    case 3:
+      return { texto: "Ocupado", color: "#ef4444" };
+    default:
+      return { texto: "Desconectado", color: "#94a3b8" };
+  }
+}
+
 export default function ChatWidget() {
   const [usuarioActual, setUsuarioActual] = useState(() =>
     JSON.parse(localStorage.getItem("usuario") || "null")
@@ -30,6 +44,7 @@ export default function ChatWidget() {
 
   const [tabActiva, setTabActiva] = useState("individual");
   const [minimizado, setMinimizado] = useState(false);
+  const [miEstado, setMiEstado] = useState(1);
 
   // Listas de contactos y grupos
   const [usuarios, setUsuarios] = useState([]);
@@ -61,10 +76,12 @@ export default function ChatWidget() {
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const candidatosPendientesRef = useRef([]);
   const fileInputRef = useRef(null);
   const mensajesEndRef = useRef(null);
 
-  // Sincroniza cambios de cosméticos en localStorage al navegar o equipar
+  // Sincroniza cambios de cosméticos en localStorage
   useEffect(() => {
     const sincronizarUsuarioLocal = () => {
       const guardado = JSON.parse(localStorage.getItem("usuario") || "null");
@@ -92,7 +109,6 @@ export default function ChatWidget() {
 
       const listaUsers = await resUsers.json();
 
-      // Actualizar también los cosméticos y puntos del usuario actual desde MySQL
       const miPerfilActualizado = listaUsers.find(
         (u) => u.id_usuario === userLocal.id_usuario
       );
@@ -100,6 +116,9 @@ export default function ChatWidget() {
         const combinado = { ...userLocal, ...miPerfilActualizado };
         setUsuarioActual(combinado);
         localStorage.setItem("usuario", JSON.stringify(combinado));
+        if (miPerfilActualizado.en_linea) {
+          setMiEstado(Number(miPerfilActualizado.en_linea));
+        }
       }
 
       const otrosUsers = listaUsers.filter((u) => u.id_usuario !== userLocal.id_usuario);
@@ -186,7 +205,7 @@ export default function ChatWidget() {
       }
     });
 
-    // Eventos WebRTC Videollamada
+    // Señalización WebRTC Videollamada
     socket.on("webrtc_llamada_entrante", (data) => {
       setLlamadaEntrante(data);
       setEstadoLlamada("entrante");
@@ -214,6 +233,7 @@ export default function ChatWidget() {
       setEstadoLlamada("conectada");
       const pc = crearPeerConnection(data.idOrigen);
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await vaciarCandidatosPendientes(pc);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit("webrtc_respuesta", {
@@ -226,12 +246,21 @@ export default function ChatWidget() {
     socket.on("webrtc_respuesta", async (data) => {
       if (pcRef.current) {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        await vaciarCandidatosPendientes(pcRef.current);
       }
     });
 
     socket.on("webrtc_ice", async (data) => {
-      if (pcRef.current && data.candidate) {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+      if (!data.candidate) return;
+      const pc = pcRef.current;
+      if (!pc || !pc.remoteDescription) {
+        candidatosPendientesRef.current.push(data.candidate);
+        return;
+      }
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } catch (err) {
+        console.error("Error agregando candidato ICE:", err);
       }
     });
 
@@ -253,8 +282,48 @@ export default function ChatWidget() {
     };
   }, [usuarioActual?.id_usuario, chatSeleccionado?.tipo, chatSeleccionado?.id, minimizado]);
 
+  // --- CAMBIO DE ESTADO MANUAL ---
+  const cambiarMiEstado = (nuevoEstado) => {
+    const valor = Number(nuevoEstado);
+    setMiEstado(valor);
+    if (usuarioActual?.id_usuario) {
+      socket.emit("cambiar_estado", {
+        idUsuario: usuarioActual.id_usuario,
+        estado: valor,
+      });
+    }
+  };
+
   // --- FUNCIONES DE WEBRTC ---
+  const vaciarCandidatosPendientes = async (pc) => {
+    const pendientes = candidatosPendientesRef.current;
+    candidatosPendientesRef.current = [];
+    for (const c of pendientes) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (err) {
+        console.error("Error agregando candidato ICE:", err);
+      }
+    }
+  };
+
+  // Callback refs: conectan los streams en cuanto se montan las etiquetas <video>
+  const asignarVideoLocal = (el) => {
+    localVideoRef.current = el;
+    if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
+      el.srcObject = localStreamRef.current;
+    }
+  };
+
+  const asignarVideoRemoto = (el) => {
+    remoteVideoRef.current = el;
+    if (el && remoteStreamRef.current && el.srcObject !== remoteStreamRef.current) {
+      el.srcObject = remoteStreamRef.current;
+    }
+  };
+
   const crearPeerConnection = (idRemoto) => {
+    if (pcRef.current) pcRef.current.close();
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
@@ -266,6 +335,7 @@ export default function ChatWidget() {
     }
 
     pc.ontrack = (event) => {
+      remoteStreamRef.current = event.streams[0];
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
@@ -280,16 +350,26 @@ export default function ChatWidget() {
       }
     };
 
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        if (pcRef.current === pc) cerrarLlamadaLocal();
+      }
+    };
+
     pcRef.current = pc;
     return pc;
   };
 
   const iniciarVideollamada = async () => {
     if (!chatSeleccionado || chatSeleccionado.tipo !== "privado") return;
+    if (estadoLlamada !== "inactiva") return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("La cámara solo funciona en localhost o con HTTPS.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
       setEstadoLlamada("llamando");
 
       socket.emit("webrtc_llamar", {
@@ -304,10 +384,13 @@ export default function ChatWidget() {
 
   const aceptarVideollamada = async () => {
     if (!llamadaEntrante) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("La cámara solo funciona en localhost o con HTTPS.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       socket.emit("webrtc_aceptar", {
         idDestino: llamadaEntrante.idOrigen,
@@ -327,8 +410,20 @@ export default function ChatWidget() {
       pcRef.current.close();
       pcRef.current = null;
     }
+    remoteStreamRef.current = null;
+    candidatosPendientesRef.current = [];
     setEstadoLlamada("inactiva");
     setLlamadaEntrante(null);
+  };
+
+  const rechazarVideollamada = () => {
+    if (llamadaEntrante) {
+      socket.emit("webrtc_rechazar", {
+        idDestino: llamadaEntrante.idOrigen,
+        idOrigen: usuarioActual.id_usuario,
+      });
+    }
+    cerrarLlamadaLocal();
   };
 
   const colgarVideollamada = () => {
@@ -486,19 +581,21 @@ export default function ChatWidget() {
       ? usuarios.find((u) => u.id_usuario === chatSeleccionado.id)
       : null;
 
-  // Cuando está minimizado muestra tu perfil equipado; cuando está abierto muestra el chat activo
+  const estadoContacto = obtenerInfoEstado(usuarioActivoObj?.en_linea);
+  const infoMiEstado = obtenerInfoEstado(miEstado);
+
   const perfilCabecera = minimizado
     ? usuarioActual
     : chatSeleccionado?.tipo === "privado"
-    ? usuarioActivoObj || chatSeleccionado
-    : null;
+      ? usuarioActivoObj || chatSeleccionado
+      : null;
 
   const marcoCabecera =
     perfilCabecera?.marco_activo && perfilCabecera.marco_activo !== "none"
       ? perfilCabecera.marco_activo
       : minimizado
-      ? "2px solid white"
-      : "2px solid #cbd5e1";
+        ? "2px solid white"
+        : "2px solid #cbd5e1";
 
   return (
     <div className="chat" style={{ width: "360px" }}>
@@ -533,8 +630,8 @@ export default function ChatWidget() {
           {perfilCabecera
             ? perfilCabecera.nombre?.charAt(0).toUpperCase()
             : chatSeleccionado?.tipo === "grupal"
-            ? "👥"
-            : "💬"}
+              ? "👥"
+              : "💬"}
         </div>
 
         <div className="persona-info">
@@ -551,8 +648,8 @@ export default function ChatWidget() {
               {minimizado
                 ? usuarioActual.nombre
                 : chatSeleccionado
-                ? chatSeleccionado.nombre
-                : "Chats Visitalis"}
+                  ? chatSeleccionado.nombre
+                  : "Chats Visitalis"}
             </span>
 
             {perfilCabecera?.insignia_activa && (
@@ -588,21 +685,18 @@ export default function ChatWidget() {
             <span
               className="punto"
               style={{
-                backgroundColor:
-                  minimizado ||
-                  chatSeleccionado?.tipo === "grupal" ||
-                  usuarioActivoObj?.en_linea
-                    ? "#2ecc71"
-                    : "#94a3b8",
+                backgroundColor: minimizado
+                  ? infoMiEstado.color
+                  : chatSeleccionado?.tipo === "grupal"
+                    ? "#22c55e"
+                    : estadoContacto.color,
               }}
             ></span>
             {minimizado
-              ? "Chat minimizado"
+              ? `${infoMiEstado.texto} · Minimizado`
               : chatSeleccionado?.tipo === "grupal"
-              ? "Grupo de viaje"
-              : usuarioActivoObj?.en_linea
-              ? "En línea"
-              : "Desconectado"}
+                ? "Grupo de viaje"
+                : estadoContacto.texto}
           </span>
         </div>
 
@@ -633,6 +727,37 @@ export default function ChatWidget() {
 
       {!minimizado && (
         <>
+          {/* SELECTOR DE MI ESTADO DE CONEXIÓN EN TIEMPO REAL */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "5px 12px",
+              backgroundColor: "#f8fafc",
+              borderBottom: "1px solid #e2e8f0",
+              fontSize: "12px",
+            }}
+          >
+            <span style={{ color: "#475569", fontWeight: "500" }}>Tu estado:</span>
+            <select
+              value={miEstado}
+              onChange={(e) => cambiarMiEstado(e.target.value)}
+              style={{
+                fontSize: "12px",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e1",
+                backgroundColor: "white",
+                cursor: "pointer",
+              }}
+            >
+              <option value={1}>🟢 En línea</option>
+              <option value={2}>🟡 Ausente</option>
+              <option value={3}>🔴 Ocupado</option>
+            </select>
+          </div>
+
           {/* PANEL VIDEOLLAMADA WEBRTC */}
           {estadoLlamada !== "inactiva" && (
             <div style={{ backgroundColor: "#0f172a", color: "white", padding: "10px", textAlign: "center" }}>
@@ -641,10 +766,16 @@ export default function ChatWidget() {
                   <p style={{ fontSize: "13px", marginBottom: "8px" }}>
                     📞 Llamada entrante de <strong>{llamadaEntrante?.nombreOrigen}</strong>
                   </p>
-                  <button onClick={aceptarVideollamada} style={{ background: "#22c55e", color: "white", border: "none", padding: "5px 10px", borderRadius: "5px", marginRight: "8px", cursor: "pointer" }}>
+                  <button
+                    onClick={aceptarVideollamada}
+                    style={{ background: "#22c55e", color: "white", border: "none", padding: "5px 10px", borderRadius: "5px", marginRight: "8px", cursor: "pointer" }}
+                  >
                     Contestar
                   </button>
-                  <button onClick={colgarVideollamada} style={{ background: "#ef4444", color: "white", border: "none", padding: "5px 10px", borderRadius: "5px", cursor: "pointer" }}>
+                  <button
+                    onClick={rechazarVideollamada}
+                    style={{ background: "#ef4444", color: "white", border: "none", padding: "5px 10px", borderRadius: "5px", cursor: "pointer" }}
+                  >
                     Rechazar
                   </button>
                 </div>
@@ -655,10 +786,13 @@ export default function ChatWidget() {
                     {estadoLlamada === "llamando" ? "Llamando..." : "En videollamada"}
                   </p>
                   <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                    <video ref={localVideoRef} autoPlay muted playsInline style={{ width: "48%", borderRadius: "6px", background: "#1e293b" }} />
-                    <video ref={remoteVideoRef} autoPlay playsInline style={{ width: "48%", borderRadius: "6px", background: "#1e293b" }} />
+                    <video ref={asignarVideoLocal} autoPlay muted playsInline style={{ width: "48%", borderRadius: "6px", background: "#1e293b" }} />
+                    <video ref={asignarVideoRemoto} autoPlay playsInline style={{ width: "48%", borderRadius: "6px", background: "#1e293b" }} />
                   </div>
-                  <button onClick={colgarVideollamada} style={{ marginTop: "8px", background: "#ef4444", color: "white", border: "none", padding: "5px 12px", borderRadius: "5px", cursor: "pointer" }}>
+                  <button
+                    onClick={colgarVideollamada}
+                    style={{ marginTop: "8px", background: "#ef4444", color: "white", border: "none", padding: "5px 12px", borderRadius: "5px", cursor: "pointer" }}
+                  >
                     Colgar
                   </button>
                 </div>
@@ -701,10 +835,12 @@ export default function ChatWidget() {
               usuarios.map((u) => {
                 const alertas = noLeidos[`privado_${u.id_usuario}`] || 0;
                 const activo = chatSeleccionado?.tipo === "privado" && chatSeleccionado.id === u.id_usuario;
+                const infoU = obtenerInfoEstado(u.en_linea);
                 return (
                   <button
                     key={u.id_usuario}
                     type="button"
+                    title={`${u.nombre} (${infoU.texto})`}
                     onClick={() =>
                       setChatSeleccionado({
                         tipo: "privado",
@@ -747,7 +883,7 @@ export default function ChatWidget() {
                     >
                       {u.nombre?.charAt(0).toUpperCase()}
                     </span>
-                    <span style={{ color: u.en_linea ? "#22c55e" : "#94a3b8" }}>●</span>
+                    <span style={{ color: infoU.color }}>●</span>
                     <span>
                       {u.nombre} {alertas > 0 ? `(${alertas})` : ""}
                     </span>
@@ -919,6 +1055,12 @@ export default function ChatWidget() {
                       alt={msg.texto}
                       style={{ maxWidth: "100%", borderRadius: "6px" }}
                     />
+                  ) : msg.tipo === "video" ? (
+                    <video
+                      controls
+                      src={`${API_URL}${msg.rutaArchivo}`}
+                      style={{ maxWidth: "100%", borderRadius: "6px" }}
+                    />
                   ) : msg.tipo === "audio" ? (
                     <audio controls src={`${API_URL}${msg.rutaArchivo}`} style={{ maxWidth: "100%" }} />
                   ) : msg.tipo === "archivo" ? (
@@ -988,7 +1130,7 @@ export default function ChatWidget() {
             />
             <button
               type="button"
-              title="Adjuntar archivo, imagen o audio"
+              title="Adjuntar archivo, imagen, audio o video"
               onClick={() => fileInputRef.current?.click()}
               style={{ background: "transparent", color: "#475569", padding: "0 6px", fontSize: "15px" }}
             >

@@ -58,6 +58,19 @@ io.on("connection", (socket) => {
         }
     });
 
+    // Cambiar estado de conexión manualmente en tiempo real (1=En línea, 2=Ausente, 3=Ocupado)
+    socket.on("cambiar_estado", async ({ idUsuario, estado }) => {
+        if (!idUsuario) return;
+        const uid = Number(idUsuario);
+        const nuevoEstado = [0, 1, 2, 3].includes(Number(estado)) ? Number(estado) : 1;
+        try {
+            await db.execute("UPDATE usuarios SET en_linea = ? WHERE id_usuario = ?", [nuevoEstado, uid]);
+            io.emit("estado_usuarios");
+        } catch (err) {
+            console.error("Error cambiando estado de conexión:", err);
+        }
+    });
+
     // 2. Mensajes de chat (Privado y Grupal, texto, archivo, ubicación, cifrado)
     socket.on("mensaje_chat", async (datosMensaje) => {
         try {
@@ -367,10 +380,11 @@ app.get("/api/sitios", async (req, res) => {
 app.get("/api/tareas", async (req, res) => {
     try {
         const [rows] = await db.execute(`
-            SELECT t.*, u.nombre AS nombre_asignado, p.nombre AS nombre_sitio 
+            SELECT t.*, u.nombre AS nombre_asignado, p.nombre AS nombre_sitio, g.nombre_grupo
             FROM tareas t
             LEFT JOIN usuarios u ON t.id_usuario_asignado = u.id_usuario
             LEFT JOIN puntos_interes p ON t.id_sitio = p.id_sitio
+            LEFT JOIN grupos g ON t.id_grupo = g.id_grupo
             ORDER BY t.id_tarea DESC
         `);
         res.json(rows);
@@ -409,6 +423,88 @@ app.put("/api/tareas/:id/completar", async (req, res) => {
         res.json({ mensaje: "Tarea completada y +25 puntos otorgados" });
     } catch (error) {
         res.status(500).json({ error: "Error al completar tarea" });
+    }
+});
+
+// Obtener integrantes de un grupo específico (para asignar tareas dentro del grupo)
+app.get("/api/grupos/:idGrupo/miembros", async (req, res) => {
+    try {
+        const [rows] = await db.execute(
+            `SELECT u.id_usuario, u.nombre, u.correo
+             FROM grupo_miembros gm
+             JOIN usuarios u ON gm.id_usuario = u.id_usuario
+             WHERE gm.id_grupo = ?`,
+            [req.params.idGrupo]
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener miembros del grupo" });
+    }
+});
+
+// Compartir el itinerario de un grupo directamente en su chat grupal
+app.post("/api/itinerario/compartir", async (req, res) => {
+    const { idGrupo, idRemitente } = req.body;
+    if (!idGrupo || !idRemitente) {
+        return res.status(400).json({ error: "Falta el grupo o el usuario remitente" });
+    }
+
+    try {
+        const [[grupo]] = await db.execute(
+            "SELECT nombre_grupo FROM grupos WHERE id_grupo = ?",
+            [idGrupo]
+        );
+        const [tareasGrupo] = await db.execute(
+            `SELECT t.titulo, t.completada, u.nombre AS asignado, p.nombre AS sitio
+             FROM tareas t
+             LEFT JOIN usuarios u ON t.id_usuario_asignado = u.id_usuario
+             LEFT JOIN puntos_interes p ON t.id_sitio = p.id_sitio
+             WHERE t.id_grupo = ?
+             ORDER BY t.id_tarea ASC`,
+            [idGrupo]
+        );
+
+        if (tareasGrupo.length === 0) {
+            return res.status(400).json({ error: "Este grupo aún no tiene lugares o tareas en su itinerario." });
+        }
+
+        const listaTexto = tareasGrupo
+            .map((t, i) => {
+                const estado = t.completada ? "✅" : "⏳";
+                const lugar = t.sitio ? ` (${t.sitio})` : "";
+                return `${i + 1}. ${estado} ${t.titulo}${lugar} — ${t.asignado || "Sin asignar"}`;
+            })
+            .join("\n");
+
+        const contenido = `🗺️ Itinerario del grupo "${grupo?.nombre_grupo || "Viaje"}":\n${listaTexto}`;
+
+        const [resultado] = await db.execute(
+            `INSERT INTO mensajes (id_remitente, id_destinatario, id_grupo, contenido, tipo, es_cifrado, leido)
+             VALUES (?, NULL, ?, ?, 'texto', 0, 0)`,
+            [idRemitente, idGrupo, contenido]
+        );
+
+        const [[remitente]] = await db.execute(
+            "SELECT nombre FROM usuarios WHERE id_usuario = ?",
+            [idRemitente]
+        );
+
+        io.emit("mensaje_chat", {
+            idMensaje: resultado.insertId,
+            idRemitente: Number(idRemitente),
+            idDestinatario: null,
+            idGrupo: Number(idGrupo),
+            texto: contenido,
+            tipo: "texto",
+            esCifrado: false,
+            nombreRemitente: remitente?.nombre || "Usuario",
+            fechaEnvio: new Date().toISOString(),
+        });
+
+        res.json({ mensaje: "Itinerario compartido en el chat grupal" });
+    } catch (error) {
+        console.error("Error compartiendo itinerario:", error);
+        res.status(500).json({ error: "No se pudo compartir el itinerario" });
     }
 });
 

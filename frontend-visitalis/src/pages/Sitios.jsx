@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../assets/sitios.css";
 
-// Imágenes representativas por categoría para mantener el diseño de tarjetas
+const API_URL = `http://${window.location.hostname}:3000`;
+
 const IMAGENES_CATEGORIA = {
   "Sitio Turístico": "https://images.unsplash.com/photo-1564399579883-451a5d44ec08?auto=format&fit=crop&w=1000&q=80",
   "Museo": "https://images.unsplash.com/photo-1518998053901-5348d3961a04?auto=format&fit=crop&w=1000&q=80",
@@ -14,6 +15,8 @@ const IMAGENES_CATEGORIA = {
 
 export default function Sitios() {
   const [sitios, setSitios] = useState([]);
+  const [grupos, setGrupos] = useState([]);
+  const [grupoDestino, setGrupoDestino] = useState("");
   const [categoria, setCategoria] = useState("todas");
   const [zona, setZona] = useState("todas");
   const [cargando, setCargando] = useState(true);
@@ -23,7 +26,7 @@ export default function Sitios() {
   const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
 
   useEffect(() => {
-    fetch("http://localhost:3000/api/sitios")
+    fetch(`${API_URL}/api/sitios`)
       .then((res) => res.json())
       .then((data) => {
         setSitios(data);
@@ -33,9 +36,15 @@ export default function Sitios() {
         console.error("Error cargando sitios:", err);
         setCargando(false);
       });
+
+    if (usuarioActual?.id_usuario) {
+      fetch(`${API_URL}/api/grupos/${usuarioActual.id_usuario}`)
+        .then((res) => res.json())
+        .then((data) => setGrupos(Array.isArray(data) ? data : []))
+        .catch((err) => console.error("Error cargando grupos:", err));
+    }
   }, []);
 
-  // Filtrado por categoría exacta y coincidencia de zona en la dirección de CDMX
   const sitiosFiltrados = sitios.filter((sitio) => {
     const coincideCategoria =
       categoria === "todas" || sitio.categoria === categoria;
@@ -53,10 +62,11 @@ export default function Sitios() {
     }
 
     try {
-      const res = await fetch("http://localhost:3000/api/tareas", {
+      const res = await fetch(`${API_URL}/api/tareas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id_grupo: grupoDestino ? Number(grupoDestino) : null,
           id_sitio: sitio.id_sitio,
           id_usuario_asignado: usuarioActual.id_usuario,
           titulo: `Visitar ${sitio.nombre}`,
@@ -64,7 +74,12 @@ export default function Sitios() {
       });
 
       if (res.ok) {
-        setAviso(`"${sitio.nombre}" se agregó a tu itinerario de tareas.`);
+        const nombreGrupo = grupos.find((g) => String(g.id_grupo) === grupoDestino)?.nombre_grupo;
+        setAviso(
+          nombreGrupo
+            ? `"${sitio.nombre}" se agregó al itinerario del grupo "${nombreGrupo}".`
+            : `"${sitio.nombre}" se agregó a tu itinerario personal.`
+        );
         setTimeout(() => setAviso(""), 3500);
       }
     } catch (error) {
@@ -72,21 +87,39 @@ export default function Sitios() {
     }
   };
 
+  const compartirItinerario = async () => {
+    if (!usuarioActual || !grupoDestino) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/itinerario/compartir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idGrupo: Number(grupoDestino),
+          idRemitente: usuarioActual.id_usuario,
+        }),
+      });
+      const data = await res.json();
+      setAviso(res.ok ? `📤 ${data.mensaje}` : `⚠️ ${data.error}`);
+      setTimeout(() => setAviso(""), 4000);
+    } catch (error) {
+      console.error("Error compartiendo itinerario:", error);
+    }
+  };
+
   return (
     <>
-      {/* ENCABEZADO */}
       <header>
         <div className="logo">
           <Link to="/" style={{ textDecoration: "none", color: "#1769e0" }}>
             Visitalis
           </Link>
         </div>
-        <div className="perfil">
+        <div style={{ fontWeight: "bold", color: "#1e293b" }}>
           {usuarioActual ? `Hola, ${usuarioActual.nombre}` : ""}
         </div>
       </header>
 
-      {/* CONTENIDO PRINCIPAL */}
       <main className="contenedor-sitios">
         <h1>Sitios turísticos</h1>
         <p className="subtitulo">
@@ -111,7 +144,7 @@ export default function Sitios() {
           </div>
         )}
 
-        {/* FILTROS */}
+        {/* FILTROS Y SELECTOR DE GRUPO PARA ITINERARIO */}
         <section className="filtros">
           <div className="filtro">
             <label htmlFor="categoria">Categoría</label>
@@ -146,6 +179,24 @@ export default function Sitios() {
             </select>
           </div>
 
+          {usuarioActual && (
+            <div className="filtro">
+              <label htmlFor="grupo-itinerario">Itinerario destino</label>
+              <select
+                id="grupo-itinerario"
+                value={grupoDestino}
+                onChange={(e) => setGrupoDestino(e.target.value)}
+              >
+                <option value="">Personal (sin grupo)</option>
+                {grupos.map((g) => (
+                  <option key={g.id_grupo} value={g.id_grupo}>
+                    👥 {g.nombre_grupo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             className="btn-filtrar"
             type="button"
@@ -154,8 +205,19 @@ export default function Sitios() {
               setZona("todas");
             }}
           >
-            Limpiar filtros
+            Limpiar
           </button>
+
+          {grupoDestino && (
+            <button
+              className="btn-filtrar"
+              type="button"
+              onClick={compartirItinerario}
+              style={{ backgroundColor: "#10b981" }}
+            >
+              📤 Compartir al grupo
+            </button>
+          )}
         </section>
 
         {/* LISTA DE SITIOS */}
