@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import "../assets/chat.css";
+import { API_URL } from "../api";
 
-const API_URL = `http://${window.location.hostname}:3000`;
-const socket = io(API_URL);
+const API_URL = `${API_URL}`;
+const socket = io(API_URL || undefined);
 
 // Cifrado simétrico activable/desactivable
 const LLAVE_CIFRADO = "VISITALIS_CDMX_2026";

@@ -17,7 +17,7 @@ export default function Registro() {
     if (nombre && correo && contrasena.length >= 6) {
       try {
         const respuesta = await fetch(
-          `http://${window.location.hostname}:3000/api/registro`,
+          `${API_URL}/api/registro`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

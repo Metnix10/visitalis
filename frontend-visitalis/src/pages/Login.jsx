@@ -19,7 +19,7 @@ export default function Login() {
     }
 
     try {
-      const respuesta = await fetch(`http://${window.location.hostname}:3000/api/login`, {
+      const respuesta = await fetch(`${API_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ correo, contrasena }),

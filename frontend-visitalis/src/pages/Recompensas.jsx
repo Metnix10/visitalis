@@ -16,7 +16,7 @@ export default function Recompensas() {
   const [mensajeTienda, setMensajeTienda] = useState("");
   const [procesandoId, setProcesandoId] = useState(null);
 
-  const API_URL = `http://${window.location.hostname}:3000`;
+  const API_URL = `${API_URL}`;
 
   const cargarDatos = () => {
     fetch(`${API_URL}/api/recompensas`)
@@ -210,7 +210,7 @@ export default function Recompensas() {
                     fontSize: "13px",
                     border:
                       usuarioActual.marco_activo &&
-                      usuarioActual.marco_activo !== "none"
+                        usuarioActual.marco_activo !== "none"
                         ? usuarioActual.marco_activo
                         : "2px solid #ffffff",
                   }}
@@ -558,10 +558,10 @@ export default function Recompensas() {
                     index === 0
                       ? "top-1"
                       : index === 1
-                      ? "top-2"
-                      : index === 2
-                      ? "top-3"
-                      : "";
+                        ? "top-2"
+                        : index === 2
+                          ? "top-3"
+                          : "";
                   const esYo =
                     usuarioActual && viajero.id_usuario === usuarioActual.id_usuario;
 
@@ -589,7 +589,7 @@ export default function Recompensas() {
                             fontWeight: "bold",
                             border:
                               viajero.marco_activo &&
-                              viajero.marco_activo !== "none"
+                                viajero.marco_activo !== "none"
                                 ? viajero.marco_activo
                                 : "1px solid #cbd5e1",
                           }}

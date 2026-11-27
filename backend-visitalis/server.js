@@ -598,6 +598,16 @@ app.put("/api/tienda/equipar", async (req, res) => {
     }
 });
 
+// Servir el frontend compilado de React (Vite)
+const frontendDist = path.join(__dirname, "../frontend-visitalis/dist");
+if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    // Fallback para React Router (compatible con Express 5)
+    app.use((req, res) => {
+        res.sendFile(path.join(frontendDist, "index.html"));
+    });
+}
+
 const PORT = 3000;
 server.listen(PORT, "0.0.0.0", () => {
     console.log(`Servidor backend corriendo en http://localhost:${PORT}`);

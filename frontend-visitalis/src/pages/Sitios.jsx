@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../assets/sitios.css";
 
-const API_URL = `http://${window.location.hostname}:3000`;
+const API_URL = `${API_URL}`;
 
 const IMAGENES_CATEGORIA = {
   "Sitio Turístico": "https://images.unsplash.com/photo-1564399579883-451a5d44ec08?auto=format&fit=crop&w=1000&q=80",

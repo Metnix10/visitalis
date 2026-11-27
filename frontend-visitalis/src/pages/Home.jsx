@@ -10,7 +10,7 @@ export default function Home() {
   useEffect(() => {
     if (!usuarioActual) return;
 
-    fetch(`http://${window.location.hostname}:3000/api/usuarios`)
+    fetch(`${API_URL}/api/usuarios`)
       .then((res) => res.json())
       .then((lista) => {
         const actualizado = lista.find(
@@ -70,7 +70,7 @@ export default function Home() {
                 fontWeight: "bold",
                 border:
                   usuarioActual.marco_activo &&
-                  usuarioActual.marco_activo !== "none"
+                    usuarioActual.marco_activo !== "none"
                     ? usuarioActual.marco_activo
                     : "2px solid #cbd5e1",
               }}
