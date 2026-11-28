@@ -4,10 +4,13 @@ import { API_URL } from "../api";
 import "../assets/tareas.css";
 
 export default function Tareas() {
-  const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
+  const [usuarioActual, setUsuarioActual] = useState(() =>
+    JSON.parse(localStorage.getItem("usuario") || "null")
+  );
 
   const [tareas, setTareas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [miembrosGrupo, setMiembrosGrupo] = useState([]);
   const [sitios, setSitios] = useState([]);
   const [grupos, setGrupos] = useState([]);
 
@@ -16,35 +19,68 @@ export default function Tareas() {
   const [idSitio, setIdSitio] = useState("");
   const [idGrupo, setIdGrupo] = useState("");
   const [aviso, setAviso] = useState("");
+  const [cargando, setCargando] = useState(true);
 
   const cargarDatos = async () => {
     try {
+      const userLocal = JSON.parse(localStorage.getItem("usuario") || "null");
       const peticiones = [
         fetch(`${API_URL}/api/tareas`),
         fetch(`${API_URL}/api/usuarios`),
         fetch(`${API_URL}/api/sitios`),
       ];
-      if (usuarioActual?.id_usuario) {
-        peticiones.push(fetch(`${API_URL}/api/grupos/${usuarioActual.id_usuario}`));
+
+      if (userLocal?.id_usuario) {
+        peticiones.push(fetch(`${API_URL}/api/grupos/${userLocal.id_usuario}`));
       }
 
       const [resTareas, resUsuarios, resSitios, resGrupos] = await Promise.all(peticiones);
 
-      setTareas(await resTareas.json());
-      setUsuarios(await resUsuarios.json());
-      setSitios(await resSitios.json());
+      const dataTareas = await resTareas.json();
+      const dataUsuarios = await resUsuarios.json();
+      const dataSitios = await resSitios.json();
+
+      setTareas(Array.isArray(dataTareas) ? dataTareas : []);
+      setUsuarios(Array.isArray(dataUsuarios) ? dataUsuarios : []);
+      setSitios(Array.isArray(dataSitios) ? dataSitios : []);
+
       if (resGrupos) {
-        const listaGrupos = await resGrupos.json();
-        setGrupos(Array.isArray(listaGrupos) ? listaGrupos : []);
+        const dataGrupos = await resGrupos.json();
+        setGrupos(Array.isArray(dataGrupos) ? dataGrupos : []);
+      }
+
+      if (userLocal?.id_usuario && !idUsuarioAsignado) {
+        setIdUsuarioAsignado(String(userLocal.id_usuario));
       }
     } catch (error) {
       console.error("Error cargando datos de tareas:", error);
+    } finally {
+      setCargando(false);
     }
   };
 
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  // Cuando se selecciona un grupo, carga específicamente los integrantes de ese grupo
+  useEffect(() => {
+    if (!idGrupo) {
+      setMiembrosGrupo([]);
+      return;
+    }
+
+    fetch(`${API_URL}/api/grupos/${idGrupo}/miembros`)
+      .then((res) => res.json())
+      .then((data) => {
+        const lista = Array.isArray(data) ? data : [];
+        setMiembrosGrupo(lista);
+        if (lista.length > 0 && !lista.some((m) => String(m.id_usuario) === String(idUsuarioAsignado))) {
+          setIdUsuarioAsignado(String(lista[0].id_usuario));
+        }
+      })
+      .catch((err) => console.error("Error cargando miembros del grupo:", err));
+  }, [idGrupo]);
 
   const seleccionarSitio = (e) => {
     const sitioId = e.target.value;
@@ -59,7 +95,7 @@ export default function Tareas() {
 
   const agregarTarea = async (e) => {
     e.preventDefault();
-    if (!descripcion || !idUsuarioAsignado) return;
+    if (!descripcion.trim() || !idUsuarioAsignado) return;
 
     try {
       const res = await fetch(`${API_URL}/api/tareas`, {
@@ -67,17 +103,17 @@ export default function Tareas() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id_grupo: idGrupo ? Number(idGrupo) : null,
-          id_sitio: idSitio || null,
-          id_usuario_asignado: idUsuarioAsignado,
-          titulo: descripcion,
+          id_sitio: idSitio ? Number(idSitio) : null,
+          id_usuario_asignado: Number(idUsuarioAsignado),
+          titulo: descripcion.trim(),
         }),
       });
 
       if (res.ok) {
         setDescripcion("");
-        setIdUsuarioAsignado("");
         setIdSitio("");
-        setIdGrupo("");
+        setAviso("✅ Tarea agregada al itinerario.");
+        setTimeout(() => setAviso(""), 3000);
         cargarDatos();
       }
     } catch (error) {
@@ -97,9 +133,10 @@ export default function Tareas() {
 
       if (res.ok) {
         const guardado = JSON.parse(localStorage.getItem("usuario") || "null");
-        if (guardado && guardado.id_usuario === tarea.id_usuario_asignado) {
+        if (guardado && Number(guardado.id_usuario) === Number(tarea.id_usuario_asignado)) {
           guardado.puntos = (guardado.puntos || 0) + 25;
           localStorage.setItem("usuario", JSON.stringify(guardado));
+          setUsuarioActual(guardado);
           window.dispatchEvent(new Event("usuario_actualizado"));
         }
 
@@ -112,10 +149,20 @@ export default function Tareas() {
     }
   };
 
+  const usuariosDisponibles = idGrupo && miembrosGrupo.length > 0 ? miembrosGrupo : usuarios;
+
   return (
     <>
       <header style={{ padding: "20px", backgroundColor: "#d6d6d6" }}>
-        <nav>
+        <nav
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            maxWidth: "800px",
+            margin: "0 auto",
+          }}
+        >
           <Link
             to="/"
             style={{
@@ -126,11 +173,16 @@ export default function Tareas() {
           >
             ← Volver al Inicio
           </Link>
+          {usuarioActual && (
+            <span style={{ fontWeight: "bold", color: "#1e293b", fontSize: "14px" }}>
+              {usuarioActual.nombre} · {usuarioActual.puntos || 0} pts
+            </span>
+          )}
         </nav>
       </header>
 
       <main>
-        <section className="modulo-tareas">
+        <section className="modulo-tareas" style={{ maxWidth: "800px" }}>
           <header style={{ marginBottom: "20px" }}>
             <h2>Gestión de Tareas e Itinerario</h2>
             <p style={{ color: "#777" }}>
@@ -156,7 +208,7 @@ export default function Tareas() {
           {/* FORMULARIO */}
           <form className="formulario-tareas" onSubmit={agregarTarea} style={{ flexWrap: "wrap" }}>
             <select value={idGrupo} onChange={(e) => setIdGrupo(e.target.value)}>
-              <option value="">Grupo (opcional / personal)...</option>
+              <option value="">Itinerario personal (sin grupo)</option>
               {grupos.map((g) => (
                 <option key={g.id_grupo} value={g.id_grupo}>
                   👥 {g.nombre_grupo}
@@ -189,7 +241,7 @@ export default function Tareas() {
               <option value="" disabled>
                 Asignar a...
               </option>
-              {usuarios.map((u) => (
+              {usuariosDisponibles.map((u) => (
                 <option key={u.id_usuario} value={u.id_usuario}>
                   {u.nombre}
                 </option>
@@ -203,7 +255,11 @@ export default function Tareas() {
 
           {/* LISTA DE TAREAS */}
           <ul className="lista-tareas">
-            {tareas.length === 0 ? (
+            {cargando ? (
+              <p style={{ color: "#777", textAlign: "center", marginTop: "15px" }}>
+                Cargando itinerario...
+              </p>
+            ) : tareas.length === 0 ? (
               <p style={{ color: "#777", textAlign: "center", marginTop: "15px" }}>
                 Aún no hay actividades asignadas en el itinerario.
               </p>
