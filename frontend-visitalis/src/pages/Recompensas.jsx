@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import "../assets/recompensas.css";
+import { API_URL } from "../api";
 
 export default function Recompensas() {
   const [usuarioActual, setUsuarioActual] = useState(() =>
@@ -16,9 +17,7 @@ export default function Recompensas() {
   const [mensajeTienda, setMensajeTienda] = useState("");
   const [procesandoId, setProcesandoId] = useState(null);
 
-  const API_URL = `${API_URL}`;
-
-  const cargarDatos = () => {
+const cargarDatos = () => {
     fetch(`${API_URL}/api/recompensas`)
       .then((res) => res.json())
       .then((data) => {
