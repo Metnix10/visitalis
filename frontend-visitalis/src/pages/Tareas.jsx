@@ -1,3 +1,4 @@
+cat << 'EOF' > ~/visitalis/frontend - visitalis / src / pages / Tareas.jsx
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { API_URL } from "../api";
@@ -63,7 +64,6 @@ export default function Tareas() {
     cargarDatos();
   }, []);
 
-  // Cuando se selecciona un grupo, carga específicamente los integrantes de ese grupo
   useEffect(() => {
     if (!idGrupo) {
       setMiembrosGrupo([]);
@@ -205,7 +205,6 @@ export default function Tareas() {
             </div>
           )}
 
-          {/* FORMULARIO */}
           <form className="formulario-tareas" onSubmit={agregarTarea} style={{ flexWrap: "wrap" }}>
             <select value={idGrupo} onChange={(e) => setIdGrupo(e.target.value)}>
               <option value="">Itinerario personal (sin grupo)</option>
@@ -253,7 +252,6 @@ export default function Tareas() {
             </button>
           </form>
 
-          {/* LISTA DE TAREAS */}
           <ul className="lista-tareas">
             {cargando ? (
               <p style={{ color: "#777", textAlign: "center", marginTop: "15px" }}>
@@ -313,3 +311,4 @@ export default function Tareas() {
     </>
   );
 }
+EOF
