@@ -15,7 +15,7 @@ export default function Perfil() {
     }
 
     // Sincroniza puntos y cosméticos actualizados desde MySQL
-    fetch(`http://${window.location.hostname}:3000/api/usuarios`)
+    fetch(`${API_URL}/api/usuarios`)
       .then((res) => res.json())
       .then((lista) => {
         const actualizado = lista.find((u) => u.id_usuario === usuario.id_usuario);

@@ -598,20 +598,6 @@ app.put("/api/tienda/equipar", async (req, res) => {
     }
 });
 
-const PORT = 3000;
-
-const frontendDist = path.join(__dirname, "../frontend-visitalis/dist");
-if (fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
-  app.use((req, res) => {
-    res.sendFile(path.join(frontendDist, "index.html"));
-  });
-}
-
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
-});
-
 // Completar misión o simular check-in de demostración
 app.post("/api/misiones/completar", async (req, res) => {
     const { idUsuario, tituloMision, puntos } = req.body;
@@ -640,4 +626,18 @@ app.post("/api/misiones/completar", async (req, res) => {
         console.error("Error completando misión:", error);
         res.status(500).json({ error: "Error al registrar la misión" });
     }
+});
+
+const PORT = 3000;
+
+const frontendDist = path.join(__dirname, "../frontend-visitalis/dist");
+if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.use((req, res) => {
+        res.sendFile(path.join(frontendDist, "index.html"));
+    });
+}
+
+server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
 });

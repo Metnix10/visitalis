@@ -1,28 +1,42 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { API_URL } from "../api";
 import "../assets/tareas.css";
 
 export default function Tareas() {
+  const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
+
   const [tareas, setTareas] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [sitios, setSitios] = useState([]);
+  const [grupos, setGrupos] = useState([]);
 
   const [descripcion, setDescripcion] = useState("");
   const [idUsuarioAsignado, setIdUsuarioAsignado] = useState("");
   const [idSitio, setIdSitio] = useState("");
+  const [idGrupo, setIdGrupo] = useState("");
   const [aviso, setAviso] = useState("");
 
   const cargarDatos = async () => {
     try {
-      const [resTareas, resUsuarios, resSitios] = await Promise.all([
-        fetch("http://localhost:3000/api/tareas"),
-        fetch("http://localhost:3000/api/usuarios"),
-        fetch("http://localhost:3000/api/sitios"),
-      ]);
+      const peticiones = [
+        fetch(`${API_URL}/api/tareas`),
+        fetch(`${API_URL}/api/usuarios`),
+        fetch(`${API_URL}/api/sitios`),
+      ];
+      if (usuarioActual?.id_usuario) {
+        peticiones.push(fetch(`${API_URL}/api/grupos/${usuarioActual.id_usuario}`));
+      }
+
+      const [resTareas, resUsuarios, resSitios, resGrupos] = await Promise.all(peticiones);
 
       setTareas(await resTareas.json());
       setUsuarios(await resUsuarios.json());
       setSitios(await resSitios.json());
+      if (resGrupos) {
+        const listaGrupos = await resGrupos.json();
+        setGrupos(Array.isArray(listaGrupos) ? listaGrupos : []);
+      }
     } catch (error) {
       console.error("Error cargando datos de tareas:", error);
     }
@@ -48,10 +62,11 @@ export default function Tareas() {
     if (!descripcion || !idUsuarioAsignado) return;
 
     try {
-      const res = await fetch("http://localhost:3000/api/tareas", {
+      const res = await fetch(`${API_URL}/api/tareas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id_grupo: idGrupo ? Number(idGrupo) : null,
           id_sitio: idSitio || null,
           id_usuario_asignado: idUsuarioAsignado,
           titulo: descripcion,
@@ -62,6 +77,7 @@ export default function Tareas() {
         setDescripcion("");
         setIdUsuarioAsignado("");
         setIdSitio("");
+        setIdGrupo("");
         cargarDatos();
       }
     } catch (error) {
@@ -74,17 +90,17 @@ export default function Tareas() {
 
     try {
       const res = await fetch(
-        `http://localhost:3000/api/tareas/${tarea.id_tarea}/completar`,
+        `${API_URL}/api/tareas/${tarea.id_tarea}/completar`,
         { method: "PUT" }
       );
       const data = await res.json();
 
       if (res.ok) {
-        // Si la tarea era del usuario con sesión iniciada, actualizamos sus puntos locales
-        const usuarioActual = JSON.parse(localStorage.getItem("usuario") || "null");
-        if (usuarioActual && usuarioActual.id_usuario === tarea.id_usuario_asignado) {
-          usuarioActual.puntos = (usuarioActual.puntos || 0) + 25;
-          localStorage.setItem("usuario", JSON.stringify(usuarioActual));
+        const guardado = JSON.parse(localStorage.getItem("usuario") || "null");
+        if (guardado && guardado.id_usuario === tarea.id_usuario_asignado) {
+          guardado.puntos = (guardado.puntos || 0) + 25;
+          localStorage.setItem("usuario", JSON.stringify(guardado));
+          window.dispatchEvent(new Event("usuario_actualizado"));
         }
 
         setAviso(data.mensaje || "¡Tarea completada! +25 puntos otorgados.");
@@ -118,7 +134,7 @@ export default function Tareas() {
           <header style={{ marginBottom: "20px" }}>
             <h2>Gestión de Tareas e Itinerario</h2>
             <p style={{ color: "#777" }}>
-              Asigna lugares o actividades a los integrantes y márcalas como visitadas para ganar puntos.
+              Asigna lugares o actividades a los integrantes de tu grupo y márcalas como visitadas para ganar puntos.
             </p>
           </header>
 
@@ -138,7 +154,16 @@ export default function Tareas() {
           )}
 
           {/* FORMULARIO */}
-          <form className="formulario-tareas" onSubmit={agregarTarea}>
+          <form className="formulario-tareas" onSubmit={agregarTarea} style={{ flexWrap: "wrap" }}>
+            <select value={idGrupo} onChange={(e) => setIdGrupo(e.target.value)}>
+              <option value="">Grupo (opcional / personal)...</option>
+              {grupos.map((g) => (
+                <option key={g.id_grupo} value={g.id_grupo}>
+                  👥 {g.nombre_grupo}
+                </option>
+              ))}
+            </select>
+
             <select value={idSitio} onChange={seleccionarSitio}>
               <option value="">Lugar de CDMX (opcional)...</option>
               {sitios.map((s) => (
@@ -191,6 +216,21 @@ export default function Tareas() {
                   <div className="texto-tarea">
                     <strong>{tarea.nombre_asignado || "Viajero"}:</strong>{" "}
                     {tarea.titulo}
+                    {tarea.nombre_grupo && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          backgroundColor: "#e0e7ff",
+                          color: "#3730a3",
+                          padding: "2px 7px",
+                          borderRadius: "999px",
+                          marginLeft: "8px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        👥 {tarea.nombre_grupo}
+                      </span>
+                    )}
                     {tarea.nombre_sitio && (
                       <span style={{ fontSize: "12px", color: "#1769e0", marginLeft: "8px" }}>
                         📍 {tarea.nombre_sitio}
